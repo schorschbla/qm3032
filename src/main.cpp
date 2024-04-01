@@ -4,17 +4,20 @@
 #include <TFT_eSPI.h>
 #include <MAX6675.h>
 #include <movingAvg.h>
+#include <SPIFFS.h>
 
 int ReadXdb401PressureValue(int *result);
 
 TFT_eSPI tft = TFT_eSPI();
+
 MAX6675 thermoCouple(33, 35, 32);
+
 movingAvg avgTemp(10); 
 movingAvg avgPressure(16); 
 
 void setup()
 {
-  //Serial.begin(9600);
+  Serial.begin(9600);
 
   Wire.begin();
 
@@ -23,7 +26,11 @@ void setup()
   tft.init();
   tft.setRotation(0);
   tft.fillScreen(TFT_BLACK);
-  tft.setTextColor(TFT_WHITE, TFT_BLUE);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+
+  SPIFFS.begin();
+
+  tft.loadFont("NotoSansBold36");
 
   thermoCouple.begin();
   avgTemp.begin(); 
@@ -53,18 +60,11 @@ void loop()
   {
     // 25fps for pressure gauge
 
-    if (avgPressure.getAvg() == 0)
-    {
-      tft.drawString("Error", x, y);
-    }
-    else
-    {
       float avgPressureBar = avgPressure.getAvg() / 32768.0 * 20;
 
       tft.setTextDatum(MR_DATUM);
-      tft.setTextPadding(tft.textWidth("00.00", 4));
-      tft.drawFloat(avgPressureBar, 2, x, y, 4);
-    }
+      tft.setTextPadding(tft.textWidth("00.0"));
+      tft.drawFloat(avgPressureBar, 1, x, y);      
   }
 
   if (c % 22 == 0)
@@ -81,19 +81,10 @@ void loop()
   {
     // 1fps for temperature gauge
 
-    if (avgTemp.getAvg() == 0)
-    {
-      tft.drawString("Error", x, y + 32);
-    }
-    else
-    {
       tft.setTextDatum(MR_DATUM);
-      tft.setTextPadding(tft.textWidth("00.0", 4));
-      tft.drawFloat(avgTemp.getAvg() / 4.0, 1, x, y + 32, 4);
-    }
+      tft.setTextPadding(tft.textWidth("00.0"));
+      tft.drawFloat(avgTemp.getAvg() / 4.0, 1, x, y + 40);
   }
-
- // Serial.printf("Temp: %f   Status: %d\n", temp, status);
   
   delay(10);
 }
