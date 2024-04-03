@@ -6,6 +6,7 @@
 #include <movingAvg.h>
 #include <SPIFFS.h>
 #include <PID_v1.h>
+#include "dial.h"
 
 #define   PID_P                   80
 #define   PID_I                   75
@@ -33,6 +34,9 @@ movingAvg temperateAvg(10), pressureAvg(10);
 double temperatureSet, temperatureIs, pidOut;
 
 PID temperaturePid(&temperatureIs, &pidOut, &temperatureSet, PID_P, PID_I, PID_D, DIRECT);
+
+Dial pressureDial(120, 120, 100, 16, TFT_BLACK);
+Dial temperatureOffsetDial(120, 120, 100, 16, TFT_BLACK);
 
 #define DEG2RAD 0.0174532925
 void getCoord(int16_t x, int16_t y, float *xp, float *yp, int16_t r, float a)
@@ -165,19 +169,10 @@ void loop()
 
     float temperatureDiff = temperateAvg.getAvg() / 4.0 - temperatureSet;
 
-    float temperatureDialValue = -(temperatureDiff / 5.0 * 50); 
-    if (temperatureDialValue < 0)
-      temperatureDialValue += 360;
-  
-    if (!isnan(lastTemperatureDialValue)) 
-    {
-      tft.drawArc(120, 120, 116, 100, WRAP_ANGLE(lastTemperatureDialValue - 4), WRAP_ANGLE(lastTemperatureDialValue + 4), TFT_BLACK, TFT_BLACK);
-    }
-     
-    tft.drawSmoothArc(120, 120, 116, 100, WRAP_ANGLE(temperatureDialValue - 3), WRAP_ANGLE(temperatureDialValue + 3), TFT_GREEN, TFT_BLACK);
-
-
-    lastTemperatureDialValue = temperatureDialValue;
+    int temperatureDialValue = -(min(5.0f, temperatureDiff) / 5.0 * 50); 
+    temperatureOffsetDial.setValue(0, temperatureDialValue);
+    temperatureOffsetDial.setColor(TFT_BLUE);
+    temperatureOffsetDial.draw(tft);
 
     if (c % (MAX6675_DUTY_CYCLES * 4) == 0)
     {
@@ -200,25 +195,13 @@ void loop()
       tft.setTextPadding(padding);
       tft.drawFloat(pressure, 1, x, 50);      
 
-      int dialValue = 70 + (int)(220 * pressure / 16.0);
-
-      dialValue = max(72, min(dialValue, 290));
-
-      if (lastPressureValue > dialValue)
-      {
-        tft.drawArc(120, 120, 116, 100, dialValue - 1, lastPressureValue + 1, TFT_BLACK, TFT_BLACK);
-      }
-
-      tft.drawSmoothArc(120, 120, 116, 100, 70, dialValue, TFT_GREEN, TFT_BLACK);
-
-      lastPressureValue = dialValue;
+      pressureDial.setValue(70, max(2, (int)(220 * min(pressure, 16.0f) / 16.0)));
+      pressureDial.setColor(TFT_GREEN);
+      pressureDial.draw(tft);
   }
 
   unsigned long windowEnd = millis();
   unsigned int elapsed = windowEnd - windowStart;
-
-if (elapsed > 20)
-      Serial.printf("Elapsed %d\n", elapsed);
 
   if (elapsed < CYCLE_LENGTH)
   {
