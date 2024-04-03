@@ -86,13 +86,32 @@ tft.drawSmoothArc(120, 120, 94, 93, 70 + 52 + 4 + 52 + 4 + 52 + 4, 290, TFT_DARK
   getCoord(120, 120, &x, &y, 85, 180 + 70 + 55 + 55 + 55 + 55);
   tft.drawString("16", x - 13, y - 9);
 
+
+  tft.drawSmoothArc(120, 120, 94, 93, 2, 50, TFT_DARKGREY, TFT_BLACK);
+
+  tft.drawSmoothArc(120, 120, 94, 93, 310, 358, TFT_DARKGREY, TFT_BLACK);
+
+
+  getCoord(120, 120, &x, &y, 85, 180);
+  tft.drawString("0", x, y - 9);
+  tft.drawString("+", x - 9, y - 10);
+  tft.drawString("_", x - 8, y - 11);
+
+
+  getCoord(120, 120, &x, &y, 85, 230);
+  tft.drawString("-5", x + 2, y - 3);
+
+  getCoord(120, 120, &x, &y, 85, 130);
+  tft.drawString("+5", x - 19, y - 2);
+
+
+
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.drawString("Bar", 142, 120 - 12);
 
+  tft.drawString("Bar", 120 - 14, 85);
 
-  tft.drawString("°C", 141, 120 + 27);
+  tft.drawString("°C", 120 - 8, 120 + 23);
 
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
   tft.loadFont("NotoSansBold36");
 
 
@@ -103,6 +122,7 @@ tft.drawSmoothArc(120, 120, 94, 93, 70 + 52 + 4 + 52 + 4 + 52 + 4, 290, TFT_DARK
 
   temperaturePid.SetOutputLimits(0, MAX6675_DUTY_CYCLES * CYCLE_LENGTH);
   temperaturePid.SetMode(AUTOMATIC);
+
 }
 
 unsigned long c = 0;
@@ -121,7 +141,7 @@ void loop()
       digitalWrite(PIN_RELAY_HEATING, LOW);
   }
 
-  uint16_t x = tft.width() / 2 + 50;
+  uint16_t x = tft.width() / 2;
   uint16_t y = tft.height() / 2;
 
   if (c % MAX6675_DUTY_CYCLES == 0)
@@ -142,9 +162,10 @@ void loop()
 
     if (c % (MAX6675_DUTY_CYCLES * 4) == 0)
     {
-      tft.setTextDatum(MR_DATUM);
-      tft.setTextPadding(tft.textWidth("000"));
-      tft.drawFloat(temperateAvg.getAvg() / 4.0, 0, x - 30, y + 30);
+      tft.setTextDatum(TC_DATUM);
+      int padding = tft.textWidth("00.0");
+      tft.setTextPadding(padding);
+      tft.drawFloat(temperateAvg.getAvg() / 4.0, 1, x, y + 39);    
     }
   }
 
@@ -155,9 +176,10 @@ void loop()
 
       float pressure = pressureAvg.getAvg() / float(SHRT_MAX) * XDB401_MAX_BAR;
 
-      tft.setTextDatum(MR_DATUM);
-      tft.setTextPadding(tft.textWidth("00.0"));
-      tft.drawFloat(pressure, 1, x - 30, y - 10);      
+      tft.setTextDatum(TC_DATUM);
+      int padding = tft.textWidth("00.0");
+      tft.setTextPadding(padding);
+      tft.drawFloat(pressure, 1, x, 50);      
 
       int dialValue = 70 + (int)(220 * pressure / 16.0);
 
