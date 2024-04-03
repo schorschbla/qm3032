@@ -128,7 +128,10 @@ tft.drawSmoothArc(120, 120, 94, 93, 70 + 52 + 4 + 52 + 4 + 52 + 4, 290, TFT_DARK
 unsigned long c = 0;
 unsigned long heatingDueTime;
 
-unsigned int lastDialValue = 0;
+unsigned int lastPressureValue = 0;
+float lastTemperatureDialValue = NAN;
+
+#define WRAP_ANGLE(x) (x) < 0 ? (360 + (x)) : (x) 
 
 void loop()
 {
@@ -160,6 +163,22 @@ void loop()
 
     temperateAvg.reading(temperature);
 
+    float temperatureDiff = temperateAvg.getAvg() / 4.0 - temperatureSet;
+
+    float temperatureDialValue = -(temperatureDiff / 5.0 * 50); 
+    if (temperatureDialValue < 0)
+      temperatureDialValue += 360;
+  
+    if (!isnan(lastTemperatureDialValue)) 
+    {
+      tft.drawArc(120, 120, 116, 100, WRAP_ANGLE(lastTemperatureDialValue - 4), WRAP_ANGLE(lastTemperatureDialValue + 4), TFT_BLACK, TFT_BLACK);
+    }
+     
+    tft.drawSmoothArc(120, 120, 116, 100, WRAP_ANGLE(temperatureDialValue - 3), WRAP_ANGLE(temperatureDialValue + 3), TFT_GREEN, TFT_BLACK);
+
+
+    lastTemperatureDialValue = temperatureDialValue;
+
     if (c % (MAX6675_DUTY_CYCLES * 4) == 0)
     {
       tft.setTextDatum(TC_DATUM);
@@ -185,14 +204,14 @@ void loop()
 
       dialValue = max(72, min(dialValue, 290));
 
-      if (lastDialValue > dialValue)
+      if (lastPressureValue > dialValue)
       {
-        tft.drawArc(120, 120, 116, 100, dialValue - 1, lastDialValue + 1, TFT_BLACK, TFT_BLACK);
+        tft.drawArc(120, 120, 116, 100, dialValue - 1, lastPressureValue + 1, TFT_BLACK, TFT_BLACK);
       }
 
       tft.drawSmoothArc(120, 120, 116, 100, 70, dialValue, TFT_GREEN, TFT_BLACK);
 
-      lastDialValue = dialValue;
+      lastPressureValue = dialValue;
   }
 
   unsigned long windowEnd = millis();
