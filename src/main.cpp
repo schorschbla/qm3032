@@ -34,6 +34,15 @@ double temperatureSet, temperatureIs, pidOut;
 
 PID temperaturePid(&temperatureIs, &pidOut, &temperatureSet, PID_P, PID_I, PID_D, DIRECT);
 
+#define DEG2RAD 0.0174532925
+void getCoord(int16_t x, int16_t y, float *xp, float *yp, int16_t r, float a)
+{
+  float sx1 = cos( (a - 90) * DEG2RAD);
+  float sy1 = sin( (a - 90) * DEG2RAD);
+  *xp =  sx1 * r + x;
+  *yp =  sy1 * r + y;
+}
+
 void setup()
 {
   Serial.begin(9600);
@@ -47,8 +56,45 @@ void setup()
   tft.init();
   tft.setRotation(0);
   tft.fillScreen(TFT_BLACK);
+  tft.loadFont("NotoSansBold15");
+
+
+tft.drawSmoothArc(120, 120, 94, 93, 70, 70 + 52, TFT_DARKGREY, TFT_BLACK);
+
+tft.drawSmoothArc(120, 120, 94, 93, 70 + 52 + 4, 70 + 52 + 4 + 52, TFT_DARKGREY, TFT_BLACK);
+
+tft.drawSmoothArc(120, 120, 94, 93, 70 + 52 + 4 + 52 + 4, 70 + 52 + 4 + 52 + 4 + 52, TFT_DARKGREY, TFT_BLACK);
+
+tft.drawSmoothArc(120, 120, 94, 93, 70 + 52 + 4 + 52 + 4 + 52 + 4, 290, TFT_DARKGREY, TFT_BLACK);
+
+
+  tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
+
+  float x, y;
+  getCoord(120, 120, &x, &y, 85, 180 + 70);
+  tft.drawString("0", x - 2, y - 10);
+
+  getCoord(120, 120, &x, &y, 85, 180 + 70 + 55);
+  tft.drawString("4", x - 1, y - 4);
+
+  getCoord(120, 120, &x, &y, 85, 180 + 70 + 55 + 55);
+  tft.drawString("8", x - 4, y - 4);
+
+  getCoord(120, 120, &x, &y, 85, 180 + 70 + 55 + 55 + 55);
+  tft.drawString("12", x - 14, y - 3);
+
+  getCoord(120, 120, &x, &y, 85, 180 + 70 + 55 + 55 + 55 + 55);
+  tft.drawString("16", x - 13, y - 9);
+
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.drawString("Bar", 142, 120 - 12);
+
+
+  tft.drawString("°C", 141, 120 + 27);
+
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
   tft.loadFont("NotoSansBold36");
+
 
   temperateAvg.begin(); 
   pressureAvg.begin();
@@ -62,6 +108,8 @@ void setup()
 unsigned long c = 0;
 unsigned long heatingDueTime;
 
+unsigned int lastDialValue = 0;
+
 void loop()
 {
   c++;
@@ -73,7 +121,7 @@ void loop()
       digitalWrite(PIN_RELAY_HEATING, LOW);
   }
 
-  uint16_t x = tft.width() / 2;
+  uint16_t x = tft.width() / 2 + 50;
   uint16_t y = tft.height() / 2;
 
   if (c % MAX6675_DUTY_CYCLES == 0)
@@ -95,8 +143,8 @@ void loop()
     if (c % (MAX6675_DUTY_CYCLES * 4) == 0)
     {
       tft.setTextDatum(MR_DATUM);
-      tft.setTextPadding(tft.textWidth("000.0"));
-      tft.drawFloat(temperateAvg.getAvg() / 4.0, 1, x, y + 40);
+      tft.setTextPadding(tft.textWidth("000"));
+      tft.drawFloat(temperateAvg.getAvg() / 4.0, 0, x - 30, y + 30);
     }
   }
 
@@ -106,13 +154,31 @@ void loop()
       pressureAvg.reading((short)(pressureSample / 256));
 
       float pressure = pressureAvg.getAvg() / float(SHRT_MAX) * XDB401_MAX_BAR;
+
       tft.setTextDatum(MR_DATUM);
-      tft.setTextPadding(tft.textWidth("000.0"));
-      tft.drawFloat(pressure, 1, x, y);      
+      tft.setTextPadding(tft.textWidth("00.0"));
+      tft.drawFloat(pressure, 1, x - 30, y - 10);      
+
+      int dialValue = 70 + (int)(220 * pressure / 16.0);
+
+      dialValue = max(72, min(dialValue, 290));
+
+      if (lastDialValue > dialValue)
+      {
+        tft.drawArc(120, 120, 116, 100, dialValue - 1, lastDialValue + 1, TFT_BLACK, TFT_BLACK);
+      }
+
+      tft.drawSmoothArc(120, 120, 116, 100, 70, dialValue, TFT_GREEN, TFT_BLACK);
+
+      lastDialValue = dialValue;
   }
 
   unsigned long windowEnd = millis();
   unsigned int elapsed = windowEnd - windowStart;
+
+if (elapsed > 20)
+      Serial.printf("Elapsed %d\n", elapsed);
+
   if (elapsed < CYCLE_LENGTH)
   {
     delay(CYCLE_LENGTH - elapsed);
