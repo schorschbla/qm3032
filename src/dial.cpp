@@ -15,10 +15,7 @@ inline unsigned int wrapAngle(int angle)
 }
 
 void Dial::setValue(int start, int amount)
-{
-    if (amount == 0)
-        amount = 1;
-
+{   
     if (amount < 0)
     {
         this->start = wrapAngle(start + amount);
@@ -27,7 +24,7 @@ void Dial::setValue(int start, int amount)
     else
     {
         this->start = wrapAngle(start);
-        this->end = this->start + amount;
+        this->end = this->start + max(1, amount);
     }
 }
 
@@ -38,20 +35,29 @@ void Dial::setColor(unsigned int color)
 
 void Dial::draw(TFT_eSPI &tft)
 {
-    if (dirtyStart != __INT_MAX__)
+    if (isDirty())
     {
-        if (start > dirtyStart && start < dirtyEnd)
+        if (dirtyStart != __INT_MAX__)
         {
-          tft.drawArc(x, y, radius + thickness, radius, (dirtyStart - 1) % 360, (start + 1) % 360, bgColor, bgColor);
+            if (start > dirtyStart && start < dirtyEnd)
+            {
+            tft.drawArc(x, y, radius + thickness, radius, (dirtyStart - 1) % 360, (start + 1) % 360, bgColor, bgColor);
+            }
+            if (dirtyStart < end && dirtyEnd > end)
+            {
+            tft.drawArc(x, y, radius + thickness, radius, (end - 1) % 360, (dirtyEnd + 1) % 360, bgColor, bgColor);
+            }
         }
-        if (dirtyStart < end && dirtyEnd > end)
-        {
-          tft.drawArc(x, y, radius + thickness, radius, (end - 1) % 360, (dirtyEnd + 1) % 360, bgColor, bgColor);
-        }
-    }
-     
-    tft.drawSmoothArc(x, y, radius + thickness, radius, start % 360, end % 360, color, bgColor);
+        
+        tft.drawSmoothArc(x, y, radius + thickness, radius, start % 360, end % 360, color, bgColor);
 
-    dirtyStart = start;
-    dirtyEnd = end;
+        dirtyStart = start;
+        dirtyEnd = end;
+        dirtyColor = color;
+    }
+}
+
+bool Dial::isDirty() const
+{
+    return start != dirtyStart || end != dirtyEnd || color != dirtyColor;
 }

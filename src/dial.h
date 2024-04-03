@@ -10,6 +10,7 @@ public:
     void setValue(int start, int amount);
     void setColor(unsigned int color);
     void draw(TFT_eSPI &tft);
+    bool isDirty() const;
 
 private:
     unsigned int x;
@@ -24,4 +25,5 @@ private:
 
     unsigned int dirtyStart;
     unsigned int dirtyEnd;
+    unsigned int dirtyColor;
 };
