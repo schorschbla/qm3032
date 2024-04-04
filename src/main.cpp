@@ -132,11 +132,6 @@ tft.drawSmoothArc(120, 120, 94, 93, 70 + 52 + 4 + 52 + 4 + 52 + 4, 290, TFT_DARK
 unsigned long c = 0;
 unsigned long heatingDueTime;
 
-unsigned int lastPressureValue = 0;
-float lastTemperatureDialValue = NAN;
-
-#define WRAP_ANGLE(x) (x) < 0 ? (360 + (x)) : (x) 
-
 void loop()
 {
   c++;
@@ -147,9 +142,6 @@ void loop()
   {
       digitalWrite(PIN_RELAY_HEATING, LOW);
   }
-
-  uint16_t x = tft.width() / 2;
-  uint16_t y = tft.height() / 2;
 
   if (c % MAX6675_DUTY_CYCLES == 0)
   {
@@ -167,10 +159,10 @@ void loop()
 
     temperateAvg.reading(temperature);
 
-    float temperatureDiff = temperateAvg.getAvg() / 4.0 - temperatureSet;
+    float temperatureAvgDegree = temperateAvg.getAvg() / 4.0;
 
-    int temperatureDialValue = -(min(5.0f, temperatureDiff) / 5.0 * 50); 
-    temperatureOffsetDial.setValue(0, temperatureDialValue);
+    int temperatureDialValue = (temperatureSet - temperatureAvgDegree) / 5.0 * 50; 
+    temperatureOffsetDial.setValue(0, max(-50, min(50, temperatureDialValue)));
     temperatureOffsetDial.setColor(TFT_BLUE);
     temperatureOffsetDial.draw(tft);
 
@@ -179,7 +171,7 @@ void loop()
       tft.setTextDatum(TC_DATUM);
       int padding = tft.textWidth("00.0");
       tft.setTextPadding(padding);
-      tft.drawFloat(temperateAvg.getAvg() / 4.0, 1, x, y + 39);    
+      tft.drawFloat(temperateAvg.getAvg() / 4.0, 1, 120, 159);    
     }
   }
 
@@ -193,9 +185,9 @@ void loop()
       tft.setTextDatum(TC_DATUM);
       int padding = tft.textWidth("00.0");
       tft.setTextPadding(padding);
-      tft.drawFloat(pressure, 1, x, 50);      
+      tft.drawFloat(pressure, pressure < 100 ? 1 : 0, 120, 50);      
 
-      pressureDial.setValue(70, max(2, (int)(220 * min(pressure, 16.0f) / 16.0)));
+      pressureDial.setValue(70, min(220, (int)(220 * pressure / 16.0)));
       pressureDial.setColor(TFT_GREEN);
       pressureDial.draw(tft);
   }
