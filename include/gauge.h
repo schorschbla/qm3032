@@ -7,7 +7,7 @@ class Gauge
 public:
     Gauge(unsigned int x, unsigned int y, unsigned int radius, unsigned int thickness, unsigned int bgColor);
 
-    void setValue(int start, int amount);
+    void setValue(unsigned int start, unsigned int amount);
     void setColor(unsigned int color);
     void draw(TFT_eSPI &tft);
     bool isDirty() const;

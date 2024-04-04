@@ -148,30 +148,35 @@ void loop()
 
     float temperatureAvgDegree = temperateAvg.getAvg() / 4.0;
 
-    // TODO Refactor this
-    int dialStart;
-    int dialAmount;
-    int dialValue = (temperatureSet - temperatureAvgDegree) / 5.0 * 50;
-    if (dialValue < 0) {
-      dialValue = max(-50, dialValue);
-      dialStart = 360 + dialValue;
-      dialAmount = -dialValue;
-      if (dialAmount < 10) {
-        dialStart -= (10 - dialAmount) / 2;
-        dialAmount = 10;
+    int tempOffsetDialStart;
+    int tempOffsetDialAmount;
+
+    int tempOffset = (temperatureSet - temperatureAvgDegree) / 5.0 * 50;
+    if (tempOffset < 0) 
+    {
+      tempOffset = max(-50, tempOffset);
+      tempOffsetDialStart = 360 + tempOffset;
+      tempOffsetDialAmount = -tempOffset;
+      if (tempOffsetDialAmount < 10) 
+      {
+        tempOffsetDialStart -= (10 - tempOffsetDialAmount) / 2;
+        tempOffsetDialAmount = 10;
       }
-    } else {
-      dialValue = min(50, dialValue);
-      dialStart = 0;
-      dialAmount = dialValue;
-      if (dialAmount < 10) {
-        dialStart = 360 - (10 - dialAmount) / 2;
-        dialAmount = 10;
+    } 
+    else 
+    {
+      tempOffset = min(50, tempOffset);
+      tempOffsetDialStart = 0;
+      tempOffsetDialAmount = tempOffset;
+      if (tempOffsetDialAmount < 10) 
+      {
+        tempOffsetDialStart = 360 - (10 - tempOffsetDialAmount) / 2;
+        tempOffsetDialAmount = 10;
       }
     }
 
 
-    temperatureOffsetDial.setValue(dialStart, dialAmount);
+    temperatureOffsetDial.setValue(tempOffsetDialStart, tempOffsetDialAmount);
     temperatureOffsetDial.setColor(tft.color24to16(tempGradient.getRgb(temperatureAvgDegree)));
     temperatureOffsetDial.draw(tft);
 

@@ -14,18 +14,10 @@ inline unsigned int wrapAngle(int angle)
     return (angle < 0 ? 360 + angle : angle) % 360;
 }
 
-void Gauge::setValue(int start, int amount)
+void Gauge::setValue(unsigned int start, unsigned int amount)
 {   
-    if (amount < 0)
-    {
-        this->start = start + amount;
-        this->end = this->start - amount;
-    }
-    else
-    {
-        this->start = start;
-        this->end = this->start + max(1, amount);
-    }
+    this->start = start;
+    this->end = this->start + max(1u, amount);
 }
 
 void Gauge::setColor(unsigned int color)
