@@ -83,20 +83,12 @@ void GaugeScale::draw(TFT_eSPI &tft, unsigned int space)
 
 const float degRad = 0.0174532925;
 
-static void getCoord(int16_t x, int16_t y, float *xp, float *yp, int16_t r, float a)
-{
-    float sx1 = cos( (a - 90) * degRad);
-    float sy1 = sin( (a - 90) * degRad);
-    *xp =  sx1 * r + x;
-    *yp =  sy1 * r + y;
-}
-
 void GaugeScale::drawLabel(TFT_eSPI &tft, unsigned int pos, const char *label, int offsetX, int offsetY)
 {
     unsigned int angle = start + ((float)(pos) / segments * amount);
+    float x = cos((angle + 90) * degRad) * radius + this->x;
+    float y = sin((angle + 90) * degRad) * radius + this->y;
 
-    float x, y;
-    getCoord(this->x, this->y, &x, &y, radius, 180 + angle);
     tft.setTextColor(color, bgColor);
     tft.drawString(label, x + offsetX, y + offsetY);
 }
