@@ -6,7 +6,8 @@
 #include <movingAvg.h>
 #include <SPIFFS.h>
 #include <PID_v1.h>
-#include "dial.h"
+
+#include "gauge.h"
 
 #define   PID_P                   80
 #define   PID_I                   75
@@ -35,17 +36,8 @@ double temperatureSet, temperatureIs, pidOut;
 
 PID temperaturePid(&temperatureIs, &pidOut, &temperatureSet, PID_P, PID_I, PID_D, DIRECT);
 
-Dial pressureDial(120, 120, 100, 16, TFT_BLACK);
-Dial temperatureOffsetDial(120, 120, 100, 16, TFT_BLACK);
-
-#define DEG2RAD 0.0174532925
-void getCoord(int16_t x, int16_t y, float *xp, float *yp, int16_t r, float a)
-{
-  float sx1 = cos( (a - 90) * DEG2RAD);
-  float sy1 = sin( (a - 90) * DEG2RAD);
-  *xp =  sx1 * r + x;
-  *yp =  sy1 * r + y;
-}
+Gauge pressureDial(120, 120, 100, 16, TFT_BLACK);
+Gauge temperatureOffsetDial(120, 120, 100, 16, TFT_BLACK);
 
 void setup()
 {
@@ -57,68 +49,6 @@ void setup()
 
   pinMode(PIN_RELAY_HEATING, OUTPUT);
 
-  tft.init();
-  tft.setRotation(0);
-  tft.fillScreen(TFT_BLACK);
-  tft.loadFont("NotoSansBold15");
-
-
-tft.drawSmoothArc(120, 120, 94, 93, 70, 70 + 52, TFT_DARKGREY, TFT_BLACK);
-
-tft.drawSmoothArc(120, 120, 94, 93, 70 + 52 + 4, 70 + 52 + 4 + 52, TFT_DARKGREY, TFT_BLACK);
-
-tft.drawSmoothArc(120, 120, 94, 93, 70 + 52 + 4 + 52 + 4, 70 + 52 + 4 + 52 + 4 + 52, TFT_DARKGREY, TFT_BLACK);
-
-tft.drawSmoothArc(120, 120, 94, 93, 70 + 52 + 4 + 52 + 4 + 52 + 4, 290, TFT_DARKGREY, TFT_BLACK);
-
-
-  tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
-
-  float x, y;
-  getCoord(120, 120, &x, &y, 85, 180 + 70);
-  tft.drawString("0", x - 2, y - 10);
-
-  getCoord(120, 120, &x, &y, 85, 180 + 70 + 55);
-  tft.drawString("4", x - 1, y - 4);
-
-  getCoord(120, 120, &x, &y, 85, 180 + 70 + 55 + 55);
-  tft.drawString("8", x - 4, y - 4);
-
-  getCoord(120, 120, &x, &y, 85, 180 + 70 + 55 + 55 + 55);
-  tft.drawString("12", x - 14, y - 3);
-
-  getCoord(120, 120, &x, &y, 85, 180 + 70 + 55 + 55 + 55 + 55);
-  tft.drawString("16", x - 13, y - 9);
-
-
-  tft.drawSmoothArc(120, 120, 94, 93, 2, 50, TFT_DARKGREY, TFT_BLACK);
-
-  tft.drawSmoothArc(120, 120, 94, 93, 310, 358, TFT_DARKGREY, TFT_BLACK);
-
-
-  getCoord(120, 120, &x, &y, 85, 180);
-  tft.drawString("0", x, y - 9);
-  tft.drawString("+", x - 9, y - 10);
-  tft.drawString("_", x - 8, y - 11);
-
-
-  getCoord(120, 120, &x, &y, 85, 230);
-  tft.drawString("-5", x + 2, y - 3);
-
-  getCoord(120, 120, &x, &y, 85, 130);
-  tft.drawString("+5", x - 19, y - 2);
-
-
-
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-
-  tft.drawString("Bar", 120 - 14, 85);
-
-  tft.drawString("°C", 120 - 8, 120 + 23);
-
-  tft.loadFont("NotoSansBold36");
-
-
   temperateAvg.begin(); 
   pressureAvg.begin();
 
@@ -127,14 +57,41 @@ tft.drawSmoothArc(120, 120, 94, 93, 70 + 52 + 4 + 52 + 4 + 52 + 4, 290, TFT_DARK
   temperaturePid.SetOutputLimits(0, MAX6675_DUTY_CYCLES * CYCLE_LENGTH);
   temperaturePid.SetMode(AUTOMATIC);
 
+  tft.init();
+  tft.setRotation(0);
+  tft.fillScreen(TFT_BLACK);
+
+  tft.loadFont("NotoSansBold15");
+
+  GaugeScale pressureScale(120,120, 93, 1, 70, 220, 4, TFT_DARKGREY, TFT_BLACK);
+  pressureScale.draw(tft, 5);
+  pressureScale.drawLabel(tft, 0, "0", 2, -14);
+  pressureScale.drawLabel(tft, 1, "4", 2);
+  pressureScale.drawLabel(tft, 2, "8", -4, 2);
+  pressureScale.drawLabel(tft, 3, "12", -18);
+  pressureScale.drawLabel(tft, 4, "16", -18, -14);
+
+  GaugeScale tempOffsetScale(120, 120, 93, 1, -50, 100, 2, TFT_DARKGREY, TFT_BLACK);
+  tempOffsetScale.draw(tft, 5);
+  tempOffsetScale.drawLabel(tft, 0, "+5", -24, -6);
+  tempOffsetScale.drawLabel(tft, 1, "0", 0, -15);
+  tempOffsetScale.drawLabel(tft, 1, "+", -9, -16);
+  tempOffsetScale.drawLabel(tft, 1, "_", -8, -18);
+  tempOffsetScale.drawLabel(tft, 2, "-5", 8, -6);
+
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.drawString("Bar", 120 - 14, 85);
+  tft.drawString("°C", 120 - 8, 120 + 23);
+
+  tft.loadFont("NotoSansBold36");
 }
 
-unsigned long c = 0;
+unsigned long cycle = 0;
 unsigned long heatingDueTime;
 
 void loop()
 {
-  c++;
+  cycle++;
 
   unsigned long windowStart = millis();
 
@@ -143,7 +100,7 @@ void loop()
       digitalWrite(PIN_RELAY_HEATING, LOW);
   }
 
-  if (c % MAX6675_DUTY_CYCLES == 0)
+  if (cycle % MAX6675_DUTY_CYCLES == 0)
   {
     int status = thermoCouple.read();
 
@@ -166,7 +123,7 @@ void loop()
     temperatureOffsetDial.setColor(TFT_BLUE);
     temperatureOffsetDial.draw(tft);
 
-    if (c % (MAX6675_DUTY_CYCLES * 4) == 0)
+    if (cycle % (MAX6675_DUTY_CYCLES * 4) == 0)
     {
       tft.setTextDatum(TC_DATUM);
       int padding = tft.textWidth("00.0");
@@ -194,7 +151,6 @@ void loop()
 
   unsigned long windowEnd = millis();
   unsigned int elapsed = windowEnd - windowStart;
-
   if (elapsed < CYCLE_LENGTH)
   {
     delay(CYCLE_LENGTH - elapsed);
