@@ -18,12 +18,12 @@ void Gauge::setValue(int start, int amount)
 {   
     if (amount < 0)
     {
-        this->start = wrapAngle(start + amount);
+        this->start = start + amount;
         this->end = this->start - amount;
     }
     else
     {
-        this->start = wrapAngle(start);
+        this->start = start;
         this->end = this->start + max(1, amount);
     }
 }
@@ -41,7 +41,7 @@ void Gauge::draw(TFT_eSPI &tft)
         {
             if (start > dirtyStart && start < dirtyEnd)
             {
-                tft.drawArc(x, y, radius + thickness, radius, wrapAngle(dirtyStart - 2), wrapAngle(start + 2), bgColor, bgColor);
+                tft.drawArc(x, y, radius + thickness, radius, wrapAngle(dirtyStart - 1), wrapAngle(start + 1), bgColor, bgColor);
             }
             if (dirtyStart < end && dirtyEnd > end)
             {

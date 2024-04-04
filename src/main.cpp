@@ -26,6 +26,7 @@
 #define   MAX6675_DUTY_CYCLES     6
 
 unsigned int const heatGradient[] = {
+  0x7f7f7f,
   0x0000ff,
   0x00a591,
   0x00ff00,
@@ -34,14 +35,16 @@ unsigned int const heatGradient[] = {
 };
 
 float const pressureHeatWeights[] = {
-  8.0f,
+  1.0f,
+  7.0f,
   4.0f,
   2.0f,
   1.0f,
 };
 
 float const temperatureHeatWeights[] = {
-  28.0f,
+  5.0f,
+  23.0f,
   2.0f,
   2.0f,
   3.0f
@@ -63,8 +66,8 @@ PID temperaturePid(&temperatureIs, &pidOut, &temperatureSet, PID_P, PID_I, PID_D
 Gauge pressureDial(120, 120, 100, 16, TFT_BLACK);
 Gauge temperatureOffsetDial(120, 120, 100, 16, TFT_BLACK);
 
-Gradient tempGradient(heatGradient, temperatureHeatWeights, 5);
-Gradient pressureGradient(heatGradient, pressureHeatWeights, 5);
+Gradient tempGradient(heatGradient, temperatureHeatWeights, 6);
+Gradient pressureGradient(heatGradient, pressureHeatWeights, 6);
 
 void setup()
 {
@@ -145,9 +148,9 @@ void loop()
 
     float temperatureAvgDegree = temperateAvg.getAvg() / 4.0;
 
+    // TODO Refactor this
     int dialStart;
     int dialAmount;
-    
     int dialValue = (temperatureSet - temperatureAvgDegree) / 5.0 * 50;
     if (dialValue < 0) {
       dialValue = max(-50, dialValue);
@@ -166,7 +169,6 @@ void loop()
         dialAmount = 10;
       }
     }
-
 
 
     temperatureOffsetDial.setValue(dialStart, dialAmount);
@@ -192,7 +194,7 @@ void loop()
       tft.setTextDatum(TC_DATUM);
       int padding = tft.textWidth("00.0");
       tft.setTextPadding(padding);
-      tft.drawFloat(pressure, pressure < 100 ? 1 : 0, 120, 50);      
+      tft.drawFloat(pressure, pressure < 100 ? 1 : 0, 120, 50);
 
       pressureDial.setValue(70, min(220, (int)(220 * pressure / 16.0)));
       pressureDial.setColor(tft.color24to16(pressureGradient.getRgb(pressure)));
