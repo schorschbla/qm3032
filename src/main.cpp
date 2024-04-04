@@ -8,6 +8,7 @@
 #include <PID_v1.h>
 
 #include "gauge.h"
+#include "gradient.h"
 
 #define   PID_P                   80
 #define   PID_I                   75
@@ -24,13 +25,36 @@
 #define   CYCLE_LENGTH            40
 #define   MAX6675_DUTY_CYCLES     6
 
+unsigned int const heatGradient[] = {
+  0x0000ff,
+  0x00a591,
+  0x00ff00,
+  0xffff00,
+  0xff0000,
+};
+
+float const pressureHeatWeights[] = {
+  8.0f,
+  4.0f,
+  2.0f,
+  1.0f,
+};
+
+float const temperatureHeatWeights[] = {
+  28.0f,
+  2.0f,
+  2.0f,
+  3.0f
+};
+
+
 int ReadXdb401PressureValue(int *result);
 
 TFT_eSPI tft = TFT_eSPI();
 
 MAX6675 thermoCouple(33, 35, 32);
 
-movingAvg temperateAvg(10), pressureAvg(10);
+movingAvg temperateAvg(20), pressureAvg(10);
 
 double temperatureSet, temperatureIs, pidOut;
 
@@ -38,6 +62,9 @@ PID temperaturePid(&temperatureIs, &pidOut, &temperatureSet, PID_P, PID_I, PID_D
 
 Gauge pressureDial(120, 120, 100, 16, TFT_BLACK);
 Gauge temperatureOffsetDial(120, 120, 100, 16, TFT_BLACK);
+
+Gradient tempGradient(heatGradient, temperatureHeatWeights, 5);
+Gradient pressureGradient(heatGradient, pressureHeatWeights, 5);
 
 void setup()
 {
@@ -80,7 +107,7 @@ void setup()
   tempOffsetScale.drawLabel(tft, 2, "-5", 8, -6);
 
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.drawString("Bar", 120 - 14, 85);
+  tft.drawString("bar", 120 - 14, 85);
   tft.drawString("°C", 120 - 8, 120 + 23);
 
   tft.loadFont("NotoSansBold36");
@@ -118,9 +145,32 @@ void loop()
 
     float temperatureAvgDegree = temperateAvg.getAvg() / 4.0;
 
-    int temperatureDialValue = (temperatureSet - temperatureAvgDegree) / 5.0 * 50; 
-    temperatureOffsetDial.setValue(0, max(-50, min(50, temperatureDialValue)));
-    temperatureOffsetDial.setColor(TFT_BLUE);
+    int dialStart;
+    int dialAmount;
+    
+    int dialValue = (temperatureSet - temperatureAvgDegree) / 5.0 * 50;
+    if (dialValue < 0) {
+      dialValue = max(-50, dialValue);
+      dialStart = 360 + dialValue;
+      dialAmount = -dialValue;
+      if (dialAmount < 10) {
+        dialStart -= (10 - dialAmount) / 2;
+        dialAmount = 10;
+      }
+    } else {
+      dialValue = min(50, dialValue);
+      dialStart = 0;
+      dialAmount = dialValue;
+      if (dialAmount < 10) {
+        dialStart = 360 - (10 - dialAmount) / 2;
+        dialAmount = 10;
+      }
+    }
+
+
+
+    temperatureOffsetDial.setValue(dialStart, dialAmount);
+    temperatureOffsetDial.setColor(tft.color24to16(tempGradient.getRgb(temperatureAvgDegree)));
     temperatureOffsetDial.draw(tft);
 
     if (cycle % (MAX6675_DUTY_CYCLES * 4) == 0)
@@ -128,7 +178,7 @@ void loop()
       tft.setTextDatum(TC_DATUM);
       int padding = tft.textWidth("00.0");
       tft.setTextPadding(padding);
-      tft.drawFloat(temperateAvg.getAvg() / 4.0, 1, 120, 159);    
+      tft.drawFloat(temperatureAvgDegree, 1, 120, 159);    
     }
   }
 
@@ -145,7 +195,7 @@ void loop()
       tft.drawFloat(pressure, pressure < 100 ? 1 : 0, 120, 50);      
 
       pressureDial.setValue(70, min(220, (int)(220 * pressure / 16.0)));
-      pressureDial.setColor(TFT_GREEN);
+      pressureDial.setColor(tft.color24to16(pressureGradient.getRgb(pressure)));
       pressureDial.draw(tft);
   }
 

@@ -11,7 +11,7 @@ Gauge::Gauge(unsigned int x, unsigned int y, unsigned int radius, unsigned int t
 
 inline unsigned int wrapAngle(int angle)
 {
-    return angle < 0 ? 360 + angle : angle;
+    return (angle < 0 ? 360 + angle : angle) % 360;
 }
 
 void Gauge::setValue(int start, int amount)
@@ -41,15 +41,15 @@ void Gauge::draw(TFT_eSPI &tft)
         {
             if (start > dirtyStart && start < dirtyEnd)
             {
-                tft.drawArc(x, y, radius + thickness, radius, (dirtyStart - 1) % 360, (start + 1) % 360, bgColor, bgColor);
+                tft.drawArc(x, y, radius + thickness, radius, wrapAngle(dirtyStart - 2), wrapAngle(start + 2), bgColor, bgColor);
             }
             if (dirtyStart < end && dirtyEnd > end)
             {
-                tft.drawArc(x, y, radius + thickness, radius, (end - 1) % 360, (dirtyEnd + 1) % 360, bgColor, bgColor);
+                tft.drawArc(x, y, radius + thickness, radius, wrapAngle(end - 1), wrapAngle(dirtyEnd + 2), bgColor, bgColor);
             }
         }
         
-        tft.drawSmoothArc(x, y, radius + thickness, radius, start % 360, end % 360, color, bgColor);
+        tft.drawSmoothArc(x, y, radius + thickness, radius, wrapAngle(start), wrapAngle(end), color, bgColor);
 
         dirtyStart = start;
         dirtyEnd = end;
