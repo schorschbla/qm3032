@@ -2,8 +2,8 @@
 #include <math.h>
 #include <Wire.h>
 #include <TFT_eSPI.h>
-#include <MAX6675.h>
-#include <movingAvg.h>
+#include <Adafruit_MAX31856.h>
+#include <MovingAverageFloat.h>
 #include <SPIFFS.h>
 #include <PID_v1.h>
 
@@ -14,16 +14,17 @@
 #define   PID_I                   75
 #define   PID_D                   0
 
-#define   PIN_MAX6675_SELECT      33
-#define   PIN_MAX6675_MISO        25  
-#define   PIN_MAX6675_CLOCK       32
+#define   PIN_MAX31856_SELECT     32
+#define   PIN_MAX31856_MISO       35
+#define   PIN_MAX31856_MOSI       25
+#define   PIN_MAX31856_CLOCK      33
 
 #define   PIN_RELAY_HEATING       18
 
 #define   XDB401_MAX_BAR          20
 
 #define   CYCLE_LENGTH            40
-#define   MAX6675_DUTY_CYCLES     6
+#define   MAX31856_READ_INTERVAL_CYCLES     3
 
 unsigned int const heatGradient[] = {
   0x7f7f7f,
@@ -55,9 +56,10 @@ int ReadXdb401PressureValue(int *result);
 
 TFT_eSPI tft = TFT_eSPI();
 
-MAX6675 thermoCouple(33, 35, 32);
+SPIClass hspi(HSPI);
+Adafruit_MAX31856 maxthermo(PIN_MAX31856_SELECT, &hspi);
 
-movingAvg temperateAvg(20), pressureAvg(10);
+MovingAverageFloat<10> temperateAvg, pressureAvg;
 
 double temperatureSet, temperatureIs, pidOut;
 
@@ -75,16 +77,18 @@ void setup()
 
   Wire.begin();
   SPIFFS.begin();
-  thermoCouple.begin();
+  
+  hspi.begin(PIN_MAX31856_CLOCK, PIN_MAX31856_MISO, PIN_MAX31856_MOSI);
+  maxthermo.begin();
+  maxthermo.setThermocoupleType(MAX31856_TCTYPE_K);
+  maxthermo.setConversionMode(MAX31856_CONTINUOUS);
+  maxthermo.setNoiseFilter(MAX31856_NOISE_FILTER_50HZ);
 
   pinMode(PIN_RELAY_HEATING, OUTPUT);
 
-  temperateAvg.begin(); 
-  pressureAvg.begin();
-
   temperatureSet = 30;
 
-  temperaturePid.SetOutputLimits(0, MAX6675_DUTY_CYCLES * CYCLE_LENGTH);
+  temperaturePid.SetOutputLimits(0, MAX31856_READ_INTERVAL_CYCLES * CYCLE_LENGTH);
   temperaturePid.SetMode(AUTOMATIC);
 
   tft.init();
@@ -130,12 +134,10 @@ void loop()
       digitalWrite(PIN_RELAY_HEATING, LOW);
   }
 
-  if (cycle % MAX6675_DUTY_CYCLES == 0)
+  if (cycle % MAX31856_READ_INTERVAL_CYCLES == 0)
   {
-    int status = thermoCouple.read();
+    temperatureIs = maxthermo.readThermocoupleTemperature();
 
-    int16_t temperature = (thermoCouple.getRawData() >> 3) & 0x1FFF;
-    temperatureIs = temperature / 4.0;
     temperaturePid.Compute();
 
     if (pidOut > 0) 
@@ -144,9 +146,9 @@ void loop()
       heatingDueTime = windowStart + (int) pidOut;
     }
 
-    temperateAvg.reading(temperature);
+    temperateAvg.add(temperatureIs);
 
-    float temperatureAvgDegree = temperateAvg.getAvg() / 4.0;
+    float temperatureAvgDegree = temperateAvg.get();
 
     int tempOffsetDialStart;
     int tempOffsetDialAmount;
@@ -180,7 +182,7 @@ void loop()
     temperatureOffsetDial.setColor(tft.color24to16(tempGradient.getRgb(temperatureAvgDegree)));
     temperatureOffsetDial.draw(tft);
 
-    if (cycle % (MAX6675_DUTY_CYCLES * 4) == 0)
+    if (cycle % (MAX31856_READ_INTERVAL_CYCLES * 4) == 0)
     {
       tft.setTextDatum(TC_DATUM);
       int padding = tft.textWidth("00.0");
@@ -192,17 +194,16 @@ void loop()
   int pressureSample;
   if (ReadXdb401PressureValue(&pressureSample) == 0)
   {
-      pressureAvg.reading((short)(pressureSample / 256));
-
-      float pressure = pressureAvg.getAvg() / float(SHRT_MAX) * XDB401_MAX_BAR;
+      float pressure = (short)(pressureSample / 256) / float(SHRT_MAX) * XDB401_MAX_BAR;
+      pressureAvg.add(pressure);
 
       tft.setTextDatum(TC_DATUM);
       int padding = tft.textWidth("00.0");
       tft.setTextPadding(padding);
-      tft.drawFloat(pressure, pressure < 100 ? 1 : 0, 120, 50);
+      tft.drawFloat(pressureAvg.get(), pressureAvg.get() < 100 ? 1 : 0, 120, 50);
 
-      pressureDial.setValue(70, min(220, (int)(220 * pressure / 16.0)));
-      pressureDial.setColor(tft.color24to16(pressureGradient.getRgb(pressure)));
+      pressureDial.setValue(70, min(220, (int)(220 * pressureAvg.get() / 16.0)));
+      pressureDial.setColor(tft.color24to16(pressureGradient.getRgb(pressureAvg.get())));
       pressureDial.draw(tft);
   }
 
