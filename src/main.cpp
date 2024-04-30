@@ -3,7 +3,7 @@
 #include <Wire.h>
 #include <TFT_eSPI.h>
 #include <Adafruit_MAX31856.h>
-#include <MovingAverageFloat.h>
+#include <DataTome.h>
 #include <SPIFFS.h>
 #include <PID_v1.h>
 
@@ -59,7 +59,7 @@ TFT_eSPI tft = TFT_eSPI();
 SPIClass hspi(HSPI);
 Adafruit_MAX31856 maxthermo(PIN_MAX31856_SELECT, &hspi);
 
-MovingAverageFloat<10> temperateAvg, pressureAvg;
+DataTomeMvAvg<float, double> temperateAvg(10), pressureAvg(10);
 
 double temperatureSet, temperatureIs, pidOut;
 
@@ -146,7 +146,7 @@ void loop()
       heatingDueTime = windowStart + (int) pidOut;
     }
 
-    temperateAvg.add(temperatureIs);
+    temperateAvg.push(temperatureIs);
 
     float temperatureAvgDegree = temperateAvg.get();
 
@@ -195,7 +195,7 @@ void loop()
   if (ReadXdb401PressureValue(&pressureSample) == 0)
   {
       float pressure = (short)(pressureSample / 256) / float(SHRT_MAX) * XDB401_MAX_BAR;
-      pressureAvg.add(pressure);
+      pressureAvg.push(pressure);
 
       tft.setTextDatum(TC_DATUM);
       int padding = tft.textWidth("00.0");

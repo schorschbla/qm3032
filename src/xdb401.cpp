@@ -12,9 +12,18 @@ int ReadXdb401PressureValue(int *result)
     Wire.beginTransmission(XDB401_ADDRESS);
     Wire.write(XDB401_PRESSURE_REG);
     Wire.endTransmission(false);
-    Wire.requestFrom(XDB401_ADDRESS, 3);
+    if (Wire.requestFrom(XDB401_ADDRESS, 3) != 3)
+    {
+         Wire.endTransmission();
+         return -1;
+    }
     sample = (Wire.read() << 16) | (Wire.read() << 8) | Wire.read();
     Wire.endTransmission();
+
+    if (sample == 0xfffff)
+    {
+        return -2;
+    }
 
     *result = (sample & 0x800000) ? sample - 0x1000000 : sample;
 
