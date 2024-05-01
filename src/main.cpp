@@ -197,13 +197,15 @@ void loop()
       float pressure = (short)(pressureSample / 256) / float(SHRT_MAX) * XDB401_MAX_BAR;
       pressureAvg.push(pressure);
 
+      float displayedPressure = max(0.0f, pressureAvg.get());
+
       tft.setTextDatum(TC_DATUM);
       int padding = tft.textWidth("00.0");
       tft.setTextPadding(padding);
-      tft.drawFloat(pressureAvg.get(), pressureAvg.get() < 100 ? 1 : 0, 120, 50);
+      tft.drawFloat(displayedPressure, 1, 120, 50);
 
-      pressureDial.setValue(70, min(220, (int)(220 * pressureAvg.get() / 16.0)));
-      pressureDial.setColor(tft.color24to16(pressureGradient.getRgb(pressureAvg.get())));
+      pressureDial.setValue(70, min(220, (int)(220 * displayedPressure / 16.0)));
+      pressureDial.setColor(tft.color24to16(pressureGradient.getRgb(displayedPressure)));
       pressureDial.draw(tft);
   }
 
