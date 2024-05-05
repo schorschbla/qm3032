@@ -11,21 +11,15 @@
 #include "gradient.h"
 #include "dimmer.h"
 
-#define   PID_P                   80
-#define   PID_I                   75
-#define   PID_D                   0
-
-#define   PIN_MAX31856_SELECT     32
-#define   PIN_MAX31856_MISO       35
-#define   PIN_MAX31856_MOSI       25
-#define   PIN_MAX31856_CLOCK      33
-
-#define   PIN_RELAY_HEATING       17
+#define   PID_P                   2
+#define   PID_I                   5
+#define   PID_D                   1
 
 #define   XDB401_MAX_BAR          20
 
-#define   CYCLE_LENGTH            40
+#define   CYCLE_LENGTH                      40
 #define   MAX31856_READ_INTERVAL_CYCLES     3
+#define   TEMPERATURE_PID_CYCLE_FACTOR      4
 
 unsigned int const heatGradient[] = {
   0x7f7f7f,
@@ -46,8 +40,8 @@ float const pressureHeatWeights[] = {
 
 float const temperatureHeatWeights[] = {
   5.0f,
-  23.0f,
-  2.0f,
+  85.0f,
+  10.0f,
   2.0f,
   3.0f
 };
@@ -89,11 +83,12 @@ void setup()
   maxthermo.setConversionMode(MAX31856_CONTINUOUS);
   maxthermo.setNoiseFilter(MAX31856_NOISE_FILTER_50HZ);
 
-  pinMode(PIN_RELAY_HEATING, OUTPUT);
-  pinMode(2, INPUT);
-  pinMode(4, INPUT);
+  pinMode(PIN_HEATING, OUTPUT);
+  pinMode(PIN_VALVE, OUTPUT);
+  pinMode(PIN_INFUSE_SWITCH, INPUT_PULLDOWN);
+  pinMode(PIN_STEAM_SWITCH, INPUT_PULLDOWN);
 
-  temperatureSet = 100;
+  temperatureSet = 110;
 
   temperaturePid.SetOutputLimits(0, 1.0);
   temperaturePid.SetMode(AUTOMATIC);
@@ -131,68 +126,41 @@ void setup()
 
 unsigned long cycle = 0;
 unsigned long heatingDueTime;
-extern       uint64_t elapsed;
-bool up = true;
-uint8_t level = 1;
-uint64_t lastZeroCrossCount = 0;
 
 void loop()
 {
   cycle++;
 
-  if (digitalRead(2))
+  if (digitalRead(PIN_INFUSE_SWITCH))
   {
-    dimmerSetLevel(255);
+    dimmerSetLevel(245);
+    digitalWrite(PIN_VALVE, HIGH);
   }
   else
   {
     dimmerSetLevel(0);
+    digitalWrite(PIN_VALVE, LOW);
   }
-
+  
   unsigned long windowStart = millis();
 
   if (windowStart > heatingDueTime) 
   {
-      digitalWrite(PIN_RELAY_HEATING, LOW);
+    digitalWrite(PIN_HEATING, LOW);
   }
-
-  // Sync with ac zero cross to minimize pressure sensor noise
-  unsigned short acPhase;
-  do
-  {
-    acPhase = dimmerPhase();
-  } while (acPhase > 50);
   
-  int pressureSample;
-  if (ReadXdb401PressureValue(&pressureSample) == 0)
-  {
-      float pressure = (short)(pressureSample / 256) / float(SHRT_MAX) * XDB401_MAX_BAR;
-      pressureAvg.push(pressure);
-
-      float displayedPressure = max(0.0f, pressureAvg.get());
-
-      tft.setTextDatum(TC_DATUM);
-      int padding = tft.textWidth("00.0");
-      tft.setTextPadding(padding);
-      tft.drawFloat(displayedPressure, 1, 120, 50);
-
-      pressureDial.setValue(70, min(220, (int)(220 * displayedPressure / 16.0)));
-      pressureDial.setColor(tft.color24to16(pressureGradient.getRgb(displayedPressure)));
-      pressureDial.draw(tft);
-  }
-
   if (cycle % MAX31856_READ_INTERVAL_CYCLES == 0)
   {
     temperatureIs = maxthermo.readThermocoupleTemperature();
 
-    if (cycle % (MAX31856_READ_INTERVAL_CYCLES * 4) == 0)
+    if (cycle % (MAX31856_READ_INTERVAL_CYCLES * TEMPERATURE_PID_CYCLE_FACTOR) == 0)
     {
       temperaturePid.Compute();
 
       if (pidOut > 0) 
       {
-        digitalWrite(PIN_RELAY_HEATING, HIGH);
-        heatingDueTime = windowStart + (int) (pidOut * MAX31856_READ_INTERVAL_CYCLES * 4 * 40);
+        digitalWrite(PIN_HEATING, HIGH);
+        heatingDueTime = windowStart + (int) (pidOut * MAX31856_READ_INTERVAL_CYCLES * TEMPERATURE_PID_CYCLE_FACTOR * CYCLE_LENGTH);
       }
     }
 
@@ -237,8 +205,27 @@ void loop()
       tft.setTextDatum(TC_DATUM);
       int padding = tft.textWidth("00.0");
       tft.setTextPadding(padding);
-      tft.drawFloat(temperatureAvgDegree, temperatureAvgDegree >= 100 ? 0 : 1, 120, 159);    
+      int sanitizedTemp = (int) temperatureAvgDegree;
+      tft.drawFloat(temperatureAvgDegree, temperatureAvgDegree > 99.9 ? 0 : 1, 120, 159);    
     }
+  }
+
+  int pressureSample;
+  if (ReadXdb401PressureValue(&pressureSample) == 0)
+  {
+      float pressure = (short)(pressureSample / 256) / float(SHRT_MAX) * XDB401_MAX_BAR;
+      pressureAvg.push(pressure);
+
+      float displayedPressure = max(0.0f, pressureAvg.get());
+
+      tft.setTextDatum(TC_DATUM);
+      int padding = tft.textWidth("00.0");
+      tft.setTextPadding(padding);
+      tft.drawFloat(displayedPressure, 1, 120, 50);
+
+      pressureDial.setValue(70, min(220, (int)(220 * displayedPressure / 16.0)));
+      pressureDial.setColor(tft.color24to16(pressureGradient.getRgb(displayedPressure)));
+      pressureDial.draw(tft);
   }
 
   unsigned long windowEnd = millis();

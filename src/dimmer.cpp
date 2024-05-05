@@ -60,7 +60,7 @@ void IRAM_ATTR isr() {
 }
 
 void dimmerBegin(uint8_t timerId) {
-	pinMode(PIN_ZEROCROSS, INPUT_PULLUP);
+	pinMode(PIN_ZEROCROSS, INPUT_PULLDOWN);
 	attachInterrupt(PIN_ZEROCROSS, isr, RISING);
 
 	pinMode(PIN_TRIAC, OUTPUT);
