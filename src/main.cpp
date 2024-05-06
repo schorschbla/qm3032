@@ -11,9 +11,14 @@
 #include "gradient.h"
 #include "dimmer.h"
 
-#define   PID_P                   2
-#define   PID_I                   5
-#define   PID_D                   1
+#define   PID_P                   2.5
+#define   PID_I                   0.25
+#define   PID_D                   0
+
+#define   PID_P_INFUSE            20
+#define   PID_I_INFUSE            2
+#define   PID_D_INFUSE            10
+
 
 #define   XDB401_MAX_BAR          20
 
@@ -54,7 +59,7 @@ TFT_eSPI tft = TFT_eSPI();
 SPIClass hspi(HSPI);
 Adafruit_MAX31856 maxthermo(PIN_MAX31856_SELECT, &hspi);
 
-DataTomeMvAvg<float, double> temperateAvg(10), pressureAvg(10);
+DataTomeMvAvg<float, double> temperateAvg(10), pressureAvg(30);
 
 double temperatureSet, temperatureIs, pidOut;
 
@@ -90,7 +95,7 @@ void setup()
 
   temperatureSet = 110;
 
-  temperaturePid.SetOutputLimits(0, 1.0);
+  temperaturePid.SetOutputLimits(0, 100);
   temperaturePid.SetMode(AUTOMATIC);
 
   tft.init();
@@ -127,21 +132,31 @@ void setup()
 unsigned long cycle = 0;
 unsigned long heatingDueTime;
 
+bool infusing = false;
+
 void loop()
 {
   cycle++;
 
-  if (digitalRead(PIN_INFUSE_SWITCH))
+  if (digitalRead(PIN_INFUSE_SWITCH) != infusing)
   {
-    dimmerSetLevel(245);
-    digitalWrite(PIN_VALVE, HIGH);
+    infusing = !infusing;
+    if (infusing)
+    {
+      temperatureSet = 102;
+      temperaturePid.SetTunings(PID_P_INFUSE, PID_I_INFUSE, PID_D_INFUSE);
+      dimmerSetLevel(245);
+      digitalWrite(PIN_VALVE, HIGH);
+    }
+    else
+    {
+      temperatureSet = 110;
+      temperaturePid.SetTunings(PID_P, PID_I, PID_D);
+      dimmerSetLevel(0);
+      digitalWrite(PIN_VALVE, LOW);
+    }
   }
-  else
-  {
-    dimmerSetLevel(0);
-    digitalWrite(PIN_VALVE, LOW);
-  }
-  
+
   unsigned long windowStart = millis();
 
   if (windowStart > heatingDueTime) 
@@ -160,7 +175,7 @@ void loop()
       if (pidOut > 0) 
       {
         digitalWrite(PIN_HEATING, HIGH);
-        heatingDueTime = windowStart + (int) (pidOut * MAX31856_READ_INTERVAL_CYCLES * TEMPERATURE_PID_CYCLE_FACTOR * CYCLE_LENGTH);
+        heatingDueTime = windowStart + (int) (pidOut / 100.0 * MAX31856_READ_INTERVAL_CYCLES * TEMPERATURE_PID_CYCLE_FACTOR * CYCLE_LENGTH);
       }
     }
 
