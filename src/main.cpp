@@ -6,51 +6,34 @@
 #include <DataTome.h>
 #include <SPIFFS.h>
 #include <PID_v1.h>
+#include <pidautotuner.h>
 
 #include "gauge.h"
 #include "gradient.h"
 #include "dimmer.h"
 
-#define   PID_P                   2.5
-#define   PID_I                   0.25
-#define   PID_D                   0
+#define PID_P                             2.6
+#define PID_I                             0.1
+#define PID_D                             0
+#define PID_MAX_OUTPUT                    100.0
 
-#define   PID_P_INFUSE            20
-#define   PID_I_INFUSE            2
-#define   PID_D_INFUSE            10
+#define TEMPERATURE_SAFETY_GUARD          112
 
+#define PID_P_INFUSE                      10
+#define PID_I_INFUSE                      0
+#define PID_D_INFUSE                      100
 
-#define   XDB401_MAX_BAR          20
+#define XDB401_MAX_BAR                    20
 
-#define   CYCLE_LENGTH                      40
-#define   MAX31856_READ_INTERVAL_CYCLES     3
-#define   TEMPERATURE_PID_CYCLE_FACTOR      4
+#define CYCLE_LENGTH                      40
+#define MAX31856_READ_INTERVAL_CYCLES     3
+#define TEMPERATURE_PID_CYCLE_FACTOR      4
 
-unsigned int const heatGradient[] = {
-  0x7f7f7f,
-  0x0000ff,
-  0x00a591,
-  0x00ff00,
-  0xffff00,
-  0xff0000,
-};
+#define HEAT_CYCLE_LENGTH (MAX31856_READ_INTERVAL_CYCLES * TEMPERATURE_PID_CYCLE_FACTOR * CYCLE_LENGTH)
 
-float const pressureHeatWeights[] = {
-  1.0f,
-  7.0f,
-  4.0f,
-  2.0f,
-  1.0f,
-};
-
-float const temperatureHeatWeights[] = {
-  5.0f,
-  85.0f,
-  10.0f,
-  2.0f,
-  3.0f
-};
-
+unsigned int const heatGradient[] = { 0x7f7f7f, 0x0000ff, 0x00a591, 0x00ff00, 0xffff00, 0xff0000 };
+static float pressureHeatWeights[] = { 1.0f, 7.0f, 4.0f, 2.0f, 1.0f };
+static float temperatureHeatWeights[] = { 5.0f, 85.0f, 10.0f, 2.0f, 3.0f };
 
 int ReadXdb401PressureValue(int *result);
 
@@ -59,11 +42,15 @@ TFT_eSPI tft = TFT_eSPI();
 SPIClass hspi(HSPI);
 Adafruit_MAX31856 maxthermo(PIN_MAX31856_SELECT, &hspi);
 
-DataTomeMvAvg<float, double> temperateAvg(10), pressureAvg(30);
+DataTomeMvAvg<float, double> temperateAvg(20), pressureAvg(30);
 
 double temperatureSet, temperatureIs, pidOut;
 
+#ifdef PID_TEMPERATURE_AUTOTUNE
+PIDAutotuner tuner = PIDAutotuner();
+#else
 PID temperaturePid(&temperatureIs, &pidOut, &temperatureSet, PID_P, PID_I, PID_D, DIRECT);
+#endif
 
 Gauge pressureDial(120, 120, 100, 16, TFT_BLACK);
 Gauge temperatureOffsetDial(120, 120, 100, 16, TFT_BLACK);
@@ -71,9 +58,15 @@ Gauge temperatureOffsetDial(120, 120, 100, 16, TFT_BLACK);
 Gradient tempGradient(heatGradient, temperatureHeatWeights, 6);
 Gradient pressureGradient(heatGradient, pressureHeatWeights, 6);
 
+hw_timer_t *heatingTimer = NULL;
+
 extern void dimmerBegin(uint8_t timerId, uint8_t zeroCrossPin, uint8_t firstTriacPin, uint8_t secondTriacPin);
 extern unsigned int zeroCrossCount;
 extern void dimmerSetLevel(uint8_t channel, uint8_t level);
+
+void IRAM_ATTR switchOffHeating() {
+    digitalWrite(PIN_HEATING, LOW);
+}
 
 void setup()
 {
@@ -94,9 +87,21 @@ void setup()
   pinMode(PIN_STEAM_SWITCH, INPUT_PULLDOWN);
 
   temperatureSet = 110;
+  temperatureHeatWeights[1] = temperatureSet - 15;
 
-  temperaturePid.SetOutputLimits(0, 100);
+#ifdef PID_TEMPERATURE_AUTOTUNE
+  tuner.setTargetInputValue(temperatureSet);
+  tuner.setLoopInterval(HEAT_CYCLE_LENGTH * 1000);
+  tuner.setOutputRange(0, 100);
+  tuner.setZNMode(PIDAutotuner::ZNModeBasicPID);
+#else
+  temperaturePid.SetOutputLimits(0, PID_MAX_OUTPUT);
+  temperaturePid.SetSampleTime(HEAT_CYCLE_LENGTH);
   temperaturePid.SetMode(AUTOMATIC);
+#endif
+
+	heatingTimer = timerBegin(1, 80, true);
+	timerAttachInterrupt(heatingTimer, &switchOffHeating, true);
 
   tft.init();
   tft.setRotation(0);
@@ -127,15 +132,32 @@ void setup()
   tft.loadFont("NotoSansBold36");
 
   dimmerBegin(0);
+
+#ifdef PID_TEMPERATURE_AUTOTUNE
+  tuner.startTuningLoop(micros());
+#endif
+}
+
+void heat(unsigned int durationMillis)
+{
+  if (durationMillis < HEAT_CYCLE_LENGTH && temperatureIs < TEMPERATURE_SAFETY_GUARD)
+  {
+    timerRestart(heatingTimer);
+    timerAlarmWrite(heatingTimer, durationMillis * 1000, false);
+    digitalWrite(PIN_HEATING, HIGH);
+    timerAlarmEnable(heatingTimer);
+  }
 }
 
 unsigned long cycle = 0;
-unsigned long heatingDueTime;
+unsigned long valveDeadline;
 
 bool infusing = false;
 
 void loop()
 {
+  unsigned long windowStart = millis();
+
   cycle++;
 
   if (digitalRead(PIN_INFUSE_SWITCH) != infusing)
@@ -143,39 +165,39 @@ void loop()
     infusing = !infusing;
     if (infusing)
     {
-      temperatureSet = 102;
       temperaturePid.SetTunings(PID_P_INFUSE, PID_I_INFUSE, PID_D_INFUSE);
       dimmerSetLevel(245);
       digitalWrite(PIN_VALVE, HIGH);
+      valveDeadline = 0;
     }
     else
     {
-      temperatureSet = 110;
       temperaturePid.SetTunings(PID_P, PID_I, PID_D);
       dimmerSetLevel(0);
-      digitalWrite(PIN_VALVE, LOW);
+      valveDeadline = windowStart + 10000;
     }
   }
 
-  unsigned long windowStart = millis();
-
-  if (windowStart > heatingDueTime) 
+  if (valveDeadline != 0 && windowStart > valveDeadline) 
   {
-    digitalWrite(PIN_HEATING, LOW);
+    digitalWrite(PIN_VALVE, LOW);
   }
-  
+
   if (cycle % MAX31856_READ_INTERVAL_CYCLES == 0)
   {
     temperatureIs = maxthermo.readThermocoupleTemperature();
 
     if (cycle % (MAX31856_READ_INTERVAL_CYCLES * TEMPERATURE_PID_CYCLE_FACTOR) == 0)
     {
+#ifdef PID_TEMPERATURE_AUTOTUNE
+      pidOut = tuner.tunePID(temperatureIs, micros());
+#else
       temperaturePid.Compute();
+#endif
 
       if (pidOut > 0) 
       {
-        digitalWrite(PIN_HEATING, HIGH);
-        heatingDueTime = windowStart + (int) (pidOut / 100.0 * MAX31856_READ_INTERVAL_CYCLES * TEMPERATURE_PID_CYCLE_FACTOR * CYCLE_LENGTH);
+        heat(pidOut / PID_MAX_OUTPUT * HEAT_CYCLE_LENGTH);
       }
     }
 
@@ -209,7 +231,6 @@ void loop()
         tempOffsetDialAmount = 10;
       }
     }
-
 
     temperatureOffsetDial.setValue(tempOffsetDialStart, tempOffsetDialAmount);
     temperatureOffsetDial.setColor(tft.color24to16(tempGradient.getRgb(temperatureAvgDegree)));
@@ -249,4 +270,12 @@ void loop()
   {
     delay(CYCLE_LENGTH - elapsed);
   }
+
+#ifdef PID_TEMPERATURE_AUTOTUNE
+  if (tuner.isFinished())
+  {
+    Serial.printf("Temperature PID autotune result: Kp = %f; Ki = %f; Kd = %f\n", tuner.getKp(), tuner.getKi(), tuner.getKd());
+    tuner.startTuningLoop(micros());
+  }
+#endif
 }
