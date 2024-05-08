@@ -17,7 +17,7 @@
 #define PID_D                             0
 #define PID_MAX_OUTPUT                    100.0
 
-#define TEMPERATURE_SAFETY_GUARD          112
+#define TEMPERATURE_SAFETY_GUARD          115
 
 #define PID_P_INFUSE                      10
 #define PID_I_INFUSE                      0
@@ -140,7 +140,7 @@ void setup()
 
 void heat(unsigned int durationMillis)
 {
-  if (durationMillis < HEAT_CYCLE_LENGTH && temperatureIs < TEMPERATURE_SAFETY_GUARD)
+  if (durationMillis <= HEAT_CYCLE_LENGTH && temperatureIs < TEMPERATURE_SAFETY_GUARD)
   {
     timerRestart(heatingTimer);
     timerAlarmWrite(heatingTimer, durationMillis * 1000, false);
