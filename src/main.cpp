@@ -2,7 +2,7 @@
 #include <math.h>
 #include <Wire.h>
 #include <TFT_eSPI.h>
-#include <Adafruit_MAX31856.h>
+#include <Adafruit_MAX31865.h>
 #include <DataTome.h>
 #include <SPIFFS.h>
 #include <PID_v1.h>
@@ -29,6 +29,11 @@
 #define MAX31856_READ_INTERVAL_CYCLES     3
 #define TEMPERATURE_PID_CYCLE_FACTOR      4
 
+#define MAX31865_RREF      430.0
+// The 'nominal' 0-degrees-C resistance of the sensor
+// 100.0 for PT100, 1000.0 for PT1000
+#define MAX31865_RNOMINAL  100.8
+
 #define HEAT_CYCLE_LENGTH (MAX31856_READ_INTERVAL_CYCLES * TEMPERATURE_PID_CYCLE_FACTOR * CYCLE_LENGTH)
 
 unsigned int const heatGradient[] = { 0x7f7f7f, 0x0000ff, 0x00a591, 0x00ff00, 0xffff00, 0xff0000 };
@@ -39,8 +44,11 @@ int ReadXdb401PressureValue(int *result);
 
 TFT_eSPI tft = TFT_eSPI();
 
-SPIClass hspi(HSPI);
-Adafruit_MAX31856 maxthermo(PIN_MAX31856_SELECT, &hspi);
+//SPIClass hspi(HSPI);
+
+// Use software SPI: CS, DI, DO, CLK
+Adafruit_MAX31865 maxthermo = Adafruit_MAX31865(PIN_MAX31865_SELECT, PIN_MAX31865_MOSI, PIN_MAX31865_MISO, PIN_MAX31865_CLOCK);
+//Adafruit_MAX31865 maxthermo(PIN_MAX31865_SELECT, &hspi);
 
 DataTomeMvAvg<float, double> temperateAvg(20), pressureAvg(30);
 
@@ -68,6 +76,45 @@ void IRAM_ATTR switchOffHeating() {
     digitalWrite(PIN_HEATING, LOW);
 }
 
+void test()
+{
+    uint16_t rtd = maxthermo.readRTD();
+
+  Serial.print("RTD value: "); Serial.println(rtd);
+  float ratio = rtd;
+  ratio /= 32768;
+  Serial.print("Ratio = "); Serial.println(ratio,8);
+  Serial.print("Resistance = "); Serial.println(MAX31865_RREF*ratio,8);
+  Serial.print("Temperature = "); Serial.println(maxthermo.temperature(MAX31865_RNOMINAL, MAX31865_RREF));
+
+  // Check and print any faults
+  uint8_t fault = maxthermo.readFault();
+  if (fault) {
+    Serial.print("Fault 0x"); Serial.println(fault, HEX);
+    if (fault & MAX31865_FAULT_HIGHTHRESH) {
+      Serial.println("RTD High Threshold"); 
+    }
+    if (fault & MAX31865_FAULT_LOWTHRESH) {
+      Serial.println("RTD Low Threshold"); 
+    }
+    if (fault & MAX31865_FAULT_REFINLOW) {
+      Serial.println("REFIN- > 0.85 x Bias"); 
+    }
+    if (fault & MAX31865_FAULT_REFINHIGH) {
+      Serial.println("REFIN- < 0.85 x Bias - FORCE- open"); 
+    }
+    if (fault & MAX31865_FAULT_RTDINLOW) {
+      Serial.println("RTDIN- < 0.85 x Bias - FORCE- open"); 
+    }
+    if (fault & MAX31865_FAULT_OVUV) {
+      Serial.println("Under/Over voltage"); 
+    }
+    maxthermo.clearFault();
+  }
+  Serial.println(""); 
+  Serial.println(""); 
+}
+
 void setup()
 {
   Serial.begin(9600);
@@ -75,11 +122,14 @@ void setup()
   Wire.begin();
   SPIFFS.begin();
   
-  hspi.begin(PIN_MAX31856_CLOCK, PIN_MAX31856_MISO, PIN_MAX31856_MOSI);
-  maxthermo.begin();
-  maxthermo.setThermocoupleType(MAX31856_TCTYPE_K);
-  maxthermo.setConversionMode(MAX31856_CONTINUOUS);
-  maxthermo.setNoiseFilter(MAX31856_NOISE_FILTER_50HZ);
+  //hspi.begin(PIN_MAX31865_CLOCK, PIN_MAX31865_MISO, PIN_MAX31865_MOSI);
+
+  
+  maxthermo.begin(MAX31865_2WIRE);
+//  maxthermo.setThermocoupleType(MAX31856_TCTYPE_K);
+//  maxthermo.setConversionMode(MAX31856_CONTINUOUS);
+//  maxthermo.setNoiseFilter(MAX31856_NOISE_FILTER_50HZ);
+  //maxthermo.enable50Hz(true);
 
   pinMode(PIN_HEATING, OUTPUT);
   pinMode(PIN_VALVE, OUTPUT);
@@ -185,7 +235,7 @@ void loop()
 
   if (cycle % MAX31856_READ_INTERVAL_CYCLES == 0)
   {
-    temperatureIs = maxthermo.readThermocoupleTemperature();
+    temperatureIs = maxthermo.temperature(MAX31865_RNOMINAL, MAX31865_RREF);
 
     if (cycle % (MAX31856_READ_INTERVAL_CYCLES * TEMPERATURE_PID_CYCLE_FACTOR) == 0)
     {
@@ -271,6 +321,9 @@ void loop()
     delay(CYCLE_LENGTH - elapsed);
   }
 
+
+if (cycle % 25 == 0)
+test();
 #ifdef PID_TEMPERATURE_AUTOTUNE
   if (tuner.isFinished())
   {
