@@ -4,6 +4,7 @@
 #include <TFT_eSPI.h>
 #include <Adafruit_MAX31865.h>
 #include <DataTome.h>
+#include <FS.h>
 #include <SPIFFS.h>
 #include <PID_v1.h>
 #include <pidautotuner.h>
@@ -14,20 +15,27 @@
 
 #define PID_P                             2.6
 #define PID_I                             0.1
-#define PID_D                             0
+#define PID_D                             6
 #define PID_MAX_OUTPUT                    100.0
 
-#define TEMPERATURE_SAFETY_GUARD          115
+#define TEMPERATURE_SAFETY_GUARD          120
 
 #define PID_P_INFUSE                      10
 #define PID_I_INFUSE                      0
 #define PID_D_INFUSE                      100
 
+#define PID_P_STEAM                       0.5
+#define PID_I_STEAM                       0
+#define PID_D_STEAM                       1
+
 #define XDB401_MAX_BAR                    20
 
 #define CYCLE_LENGTH                      40
-#define MAX31856_READ_INTERVAL_CYCLES     3
-#define TEMPERATURE_PID_CYCLE_FACTOR      4
+#define MAX31856_READ_INTERVAL_CYCLES     2
+#define TEMPERATURE_PID_CYCLE_FACTOR      6
+
+#define STEAM_CYCLE                       32
+#define STEAM_OFF                         2
 
 #define MAX31865_RREF      430.0
 // The 'nominal' 0-degrees-C resistance of the sensor
@@ -44,11 +52,11 @@ int ReadXdb401PressureValue(int *result);
 
 TFT_eSPI tft = TFT_eSPI();
 
-//SPIClass hspi(HSPI);
+SPIClass hspi(HSPI);
 
 // Use software SPI: CS, DI, DO, CLK
-Adafruit_MAX31865 maxthermo = Adafruit_MAX31865(PIN_MAX31865_SELECT, PIN_MAX31865_MOSI, PIN_MAX31865_MISO, PIN_MAX31865_CLOCK);
-//Adafruit_MAX31865 maxthermo(PIN_MAX31865_SELECT, &hspi);
+//Adafruit_MAX31865 maxthermo = Adafruit_MAX31865(PIN_MAX31865_SELECT, PIN_MAX31865_MOSI, PIN_MAX31865_MISO, PIN_MAX31865_CLOCK);
+Adafruit_MAX31865 maxthermo(PIN_MAX31865_SELECT, &hspi);
 
 DataTomeMvAvg<float, double> temperateAvg(20), pressureAvg(30);
 
@@ -68,6 +76,8 @@ Gradient pressureGradient(heatGradient, pressureHeatWeights, 6);
 
 hw_timer_t *heatingTimer = NULL;
 
+fs::File splashFile;
+
 extern void dimmerBegin(uint8_t timerId, uint8_t zeroCrossPin, uint8_t firstTriacPin, uint8_t secondTriacPin);
 extern unsigned int zeroCrossCount;
 extern void dimmerSetLevel(uint8_t channel, uint8_t level);
@@ -76,43 +86,12 @@ void IRAM_ATTR switchOffHeating() {
     digitalWrite(PIN_HEATING, LOW);
 }
 
-void test()
+unsigned char splashBuf[1024];
+
+void setTemperature(float t)
 {
-    uint16_t rtd = maxthermo.readRTD();
-
-  Serial.print("RTD value: "); Serial.println(rtd);
-  float ratio = rtd;
-  ratio /= 32768;
-  Serial.print("Ratio = "); Serial.println(ratio,8);
-  Serial.print("Resistance = "); Serial.println(MAX31865_RREF*ratio,8);
-  Serial.print("Temperature = "); Serial.println(maxthermo.temperature(MAX31865_RNOMINAL, MAX31865_RREF));
-
-  // Check and print any faults
-  uint8_t fault = maxthermo.readFault();
-  if (fault) {
-    Serial.print("Fault 0x"); Serial.println(fault, HEX);
-    if (fault & MAX31865_FAULT_HIGHTHRESH) {
-      Serial.println("RTD High Threshold"); 
-    }
-    if (fault & MAX31865_FAULT_LOWTHRESH) {
-      Serial.println("RTD Low Threshold"); 
-    }
-    if (fault & MAX31865_FAULT_REFINLOW) {
-      Serial.println("REFIN- > 0.85 x Bias"); 
-    }
-    if (fault & MAX31865_FAULT_REFINHIGH) {
-      Serial.println("REFIN- < 0.85 x Bias - FORCE- open"); 
-    }
-    if (fault & MAX31865_FAULT_RTDINLOW) {
-      Serial.println("RTDIN- < 0.85 x Bias - FORCE- open"); 
-    }
-    if (fault & MAX31865_FAULT_OVUV) {
-      Serial.println("Under/Over voltage"); 
-    }
-    maxthermo.clearFault();
-  }
-  Serial.println(""); 
-  Serial.println(""); 
+  temperatureSet = t;
+  temperatureHeatWeights[1] = temperatureSet - 15;
 }
 
 void setup()
@@ -122,22 +101,23 @@ void setup()
   Wire.begin();
   SPIFFS.begin();
   
-  //hspi.begin(PIN_MAX31865_CLOCK, PIN_MAX31865_MISO, PIN_MAX31865_MOSI);
+  hspi.begin(PIN_MAX31865_CLOCK, PIN_MAX31865_MISO, PIN_MAX31865_MOSI);
 
   
   maxthermo.begin(MAX31865_2WIRE);
 //  maxthermo.setThermocoupleType(MAX31856_TCTYPE_K);
 //  maxthermo.setConversionMode(MAX31856_CONTINUOUS);
 //  maxthermo.setNoiseFilter(MAX31856_NOISE_FILTER_50HZ);
-  //maxthermo.enable50Hz(true);
+  maxthermo.enable50Hz(true);
+  maxthermo.autoConvert(true);
+  maxthermo.enableBias(true);
 
   pinMode(PIN_HEATING, OUTPUT);
   pinMode(PIN_VALVE, OUTPUT);
   pinMode(PIN_INFUSE_SWITCH, INPUT_PULLDOWN);
   pinMode(PIN_STEAM_SWITCH, INPUT_PULLDOWN);
 
-  temperatureSet = 110;
-  temperatureHeatWeights[1] = temperatureSet - 15;
+  setTemperature(110);
 
 #ifdef PID_TEMPERATURE_AUTOTUNE
   tuner.setTargetInputValue(temperatureSet);
@@ -183,6 +163,8 @@ void setup()
 
   dimmerBegin(0);
 
+splashFile = SPIFFS.open("/splash-karl.raw");
+
 #ifdef PID_TEMPERATURE_AUTOTUNE
   tuner.startTuningLoop(micros());
 #endif
@@ -203,6 +185,7 @@ unsigned long cycle = 0;
 unsigned long valveDeadline;
 
 bool infusing = false;
+bool steam = false;
 
 void loop()
 {
@@ -210,22 +193,54 @@ void loop()
 
   cycle++;
 
-  if (digitalRead(PIN_INFUSE_SWITCH) != infusing)
+  if (!steam && digitalRead(PIN_INFUSE_SWITCH) != infusing)
   {
     infusing = !infusing;
     if (infusing)
     {
+      temperatureIs = 115;
       temperaturePid.SetTunings(PID_P_INFUSE, PID_I_INFUSE, PID_D_INFUSE);
-      dimmerSetLevel(245);
+      dimmerSetLevel(225);
       digitalWrite(PIN_VALVE, HIGH);
       valveDeadline = 0;
     }
     else
     {
+      temperatureIs = 105;
       temperaturePid.SetTunings(PID_P, PID_I, PID_D);
       dimmerSetLevel(0);
       valveDeadline = windowStart + 10000;
     }
+  }
+
+  if (!infusing && digitalRead(PIN_STEAM_SWITCH) != steam)
+  {
+    steam = !steam;
+    if (steam)
+    {
+      setTemperature(115);
+      temperaturePid.SetTunings(PID_P_STEAM, PID_I_STEAM, PID_D_STEAM);
+      digitalWrite(PIN_VALVE, HIGH);
+      valveDeadline = 0;
+    }
+    else
+    {
+      setTemperature(110);
+      temperaturePid.SetTunings(PID_P, PID_I, PID_D);
+      digitalWrite(PIN_VALVE, LOW);
+    }
+  }
+
+  if (steam)
+  {
+      if (cycle % STEAM_CYCLE == 0)
+      {
+         dimmerSetLevel(220);
+      }
+      else if (cycle % STEAM_CYCLE == STEAM_OFF)
+      {
+         dimmerSetLevel(0);
+      }
   }
 
   if (valveDeadline != 0 && windowStart > valveDeadline) 
@@ -235,7 +250,8 @@ void loop()
 
   if (cycle % MAX31856_READ_INTERVAL_CYCLES == 0)
   {
-    temperatureIs = maxthermo.temperature(MAX31865_RNOMINAL, MAX31865_RREF);
+    uint16_t rtd = maxthermo.readAutoRTD();
+    temperatureIs = maxthermo.calculateTemperature(rtd, MAX31865_RNOMINAL, MAX31865_RREF);
 
     if (cycle % (MAX31856_READ_INTERVAL_CYCLES * TEMPERATURE_PID_CYCLE_FACTOR) == 0)
     {
@@ -245,9 +261,14 @@ void loop()
       temperaturePid.Compute();
 #endif
 
+      if (steam)
+      {
+        Serial.printf("pid: %f\n", pidOut);
+      }
+
       if (pidOut > 0) 
       {
-        heat(pidOut / PID_MAX_OUTPUT * HEAT_CYCLE_LENGTH);
+        heat(min(steam ? pidOut + 97 : pidOut, PID_MAX_OUTPUT) / PID_MAX_OUTPUT * HEAT_CYCLE_LENGTH);
       }
     }
 
@@ -314,6 +335,14 @@ void loop()
       pressureDial.draw(tft);
   }
 
+  if (false && cycle < 32)
+  {
+    size_t pos = 0;
+    while (pos < 1024)
+      pos += splashFile.read(splashBuf + pos, 1024 - pos);
+    tft.pushImage(56, 110 + cycle * 4, 128, 4, (uint16_t *)splashBuf);
+  }
+
   unsigned long windowEnd = millis();
   unsigned int elapsed = windowEnd - windowStart;
   if (elapsed < CYCLE_LENGTH)
@@ -321,9 +350,6 @@ void loop()
     delay(CYCLE_LENGTH - elapsed);
   }
 
-
-if (cycle % 25 == 0)
-test();
 #ifdef PID_TEMPERATURE_AUTOTUNE
   if (tuner.isFinished())
   {
