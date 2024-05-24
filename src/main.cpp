@@ -15,20 +15,32 @@
 
 #define PID_P                             2.6
 #define PID_I                             0.1
-#define PID_D                             6
+#define PID_D                             0
 #define PID_MAX_OUTPUT                    100.0
 
-#define TEMPERATURE_SAFETY_GUARD          120
+#define TEMPERATURE_SAFETY_GUARD          125
 
-#define PID_P_INFUSE                      10
-#define PID_I_INFUSE                      0
-#define PID_D_INFUSE                      100
+// P: 5.269382 I: 0.394954 D: 17.575706
+// P: 9.693529 I: 0.208090 D: 112.889206
+// P: 12.668172 I: 0.274426 D: 146.198624
 
-#define PID_P_STEAM                       0.5
-#define PID_I_STEAM                       0
-#define PID_D_STEAM                       1
+//#define PID_P_INFUSE                      7.5
+//#define PID_I_INFUSE                      0.3
+//#define PID_D_INFUSE                      64
+
+#define PID_P_INFUSE                      9.7
+#define PID_I_INFUSE                      0.2
+#define PID_D_INFUSE                      112
+
+
+// 13.512877 I: 0.314779 D: 145.020584
+
+#define PID_P_STEAM                       13.5
+#define PID_I_STEAM                       0.31
+#define PID_D_STEAM                       145
 
 #define XDB401_MAX_BAR                    20
+#define XDB401_READ_INTERVAL_CYCLES       3
 
 #define CYCLE_LENGTH                      40
 #define MAX31856_READ_INTERVAL_CYCLES     2
@@ -53,12 +65,9 @@ int ReadXdb401PressureValue(int *result);
 TFT_eSPI tft = TFT_eSPI();
 
 SPIClass hspi(HSPI);
+Adafruit_MAX31865 thermo(PIN_MAX31865_SELECT, &hspi);
 
-// Use software SPI: CS, DI, DO, CLK
-//Adafruit_MAX31865 maxthermo = Adafruit_MAX31865(PIN_MAX31865_SELECT, PIN_MAX31865_MOSI, PIN_MAX31865_MISO, PIN_MAX31865_CLOCK);
-Adafruit_MAX31865 maxthermo(PIN_MAX31865_SELECT, &hspi);
-
-DataTomeMvAvg<float, double> temperateAvg(20), pressureAvg(30);
+DataTomeMvAvg<float, double> temperateAvg(20), pressureAvg(10);
 
 double temperatureSet, temperatureIs, pidOut;
 
@@ -67,6 +76,10 @@ PIDAutotuner tuner = PIDAutotuner();
 #else
 PID temperaturePid(&temperatureIs, &pidOut, &temperatureSet, PID_P, PID_I, PID_D, DIRECT);
 #endif
+
+PIDAutotuner steamTuner = PIDAutotuner();
+
+PIDAutotuner infusionTuner = PIDAutotuner();
 
 Gauge pressureDial(120, 120, 100, 16, TFT_BLACK);
 Gauge temperatureOffsetDial(120, 120, 100, 16, TFT_BLACK);
@@ -94,6 +107,8 @@ void setTemperature(float t)
   temperatureHeatWeights[1] = temperatureSet - 15;
 }
 
+extern void ReadRegs();
+
 void setup()
 {
   Serial.begin(9600);
@@ -102,22 +117,18 @@ void setup()
   SPIFFS.begin();
   
   hspi.begin(PIN_MAX31865_CLOCK, PIN_MAX31865_MISO, PIN_MAX31865_MOSI);
-
   
-  maxthermo.begin(MAX31865_2WIRE);
-//  maxthermo.setThermocoupleType(MAX31856_TCTYPE_K);
-//  maxthermo.setConversionMode(MAX31856_CONTINUOUS);
-//  maxthermo.setNoiseFilter(MAX31856_NOISE_FILTER_50HZ);
-  maxthermo.enable50Hz(true);
-  maxthermo.autoConvert(true);
-  maxthermo.enableBias(true);
+  thermo.begin(MAX31865_2WIRE);
+  thermo.enable50Hz(true);
+  thermo.autoConvert(true);
+  thermo.enableBias(true);
 
   pinMode(PIN_HEATING, OUTPUT);
   pinMode(PIN_VALVE, OUTPUT);
   pinMode(PIN_INFUSE_SWITCH, INPUT_PULLDOWN);
   pinMode(PIN_STEAM_SWITCH, INPUT_PULLDOWN);
 
-  setTemperature(110);
+  setTemperature(100);
 
 #ifdef PID_TEMPERATURE_AUTOTUNE
   tuner.setTargetInputValue(temperatureSet);
@@ -198,15 +209,23 @@ void loop()
     infusing = !infusing;
     if (infusing)
     {
-      temperatureIs = 115;
+
+      infusionTuner.setTargetInputValue(96);
+      infusionTuner.setLoopInterval(HEAT_CYCLE_LENGTH * 1000);
+      infusionTuner.setOutputRange(0, 100);
+      infusionTuner.setZNMode(PIDAutotuner::ZNModeBasicPID);
+      infusionTuner.startTuningLoop(micros());
+
+
+      setTemperature(96);
       temperaturePid.SetTunings(PID_P_INFUSE, PID_I_INFUSE, PID_D_INFUSE);
-      dimmerSetLevel(225);
+      dimmerSetLevel(220);
       digitalWrite(PIN_VALVE, HIGH);
       valveDeadline = 0;
     }
     else
     {
-      temperatureIs = 105;
+      setTemperature(100);
       temperaturePid.SetTunings(PID_P, PID_I, PID_D);
       dimmerSetLevel(0);
       valveDeadline = windowStart + 10000;
@@ -218,14 +237,24 @@ void loop()
     steam = !steam;
     if (steam)
     {
-      setTemperature(115);
+      steamTuner.setTargetInputValue(117);
+      steamTuner.setTuningCycles(5);
+      steamTuner.setLoopInterval(HEAT_CYCLE_LENGTH * 1000);
+      steamTuner.setOutputRange(0, 100);
+      steamTuner.setZNMode(PIDAutotuner::ZNModeBasicPID);
+      steamTuner.startTuningLoop(micros());
+
+      //temperaturePid.SetOutputLimits(-5.0, 5.0);
+
+      setTemperature(120);
       temperaturePid.SetTunings(PID_P_STEAM, PID_I_STEAM, PID_D_STEAM);
       digitalWrite(PIN_VALVE, HIGH);
       valveDeadline = 0;
     }
     else
     {
-      setTemperature(110);
+      setTemperature(100);
+      dimmerSetLevel(0);
       temperaturePid.SetTunings(PID_P, PID_I, PID_D);
       digitalWrite(PIN_VALVE, LOW);
     }
@@ -250,11 +279,11 @@ void loop()
 
   if (cycle % MAX31856_READ_INTERVAL_CYCLES == 0)
   {
-    uint16_t rtd = maxthermo.readAutoRTD();
-    temperatureIs = maxthermo.calculateTemperature(rtd, MAX31865_RNOMINAL, MAX31865_RREF);
+    uint16_t rtd = thermo.readRTDCont();
+    temperatureIs = thermo.calculateTemperature(rtd, MAX31865_RNOMINAL, MAX31865_RREF);
 
     if (cycle % (MAX31856_READ_INTERVAL_CYCLES * TEMPERATURE_PID_CYCLE_FACTOR) == 0)
-    {
+    { 
 #ifdef PID_TEMPERATURE_AUTOTUNE
       pidOut = tuner.tunePID(temperatureIs, micros());
 #else
@@ -263,12 +292,18 @@ void loop()
 
       if (steam)
       {
-        Serial.printf("pid: %f\n", pidOut);
+        //pidOut = steamTuner.tunePID(temperatureIs, micros());
+        Serial.printf("Pidout: %f\n", pidOut);
+      }
+      else if (infusing)
+      {
+        //pidOut = infusionTuner.tunePID(temperatureIs, micros());
+        Serial.printf("Infusion Pidout: %f temp: %f\n", pidOut, temperatureIs);
       }
 
       if (pidOut > 0) 
       {
-        heat(min(steam ? pidOut + 97 : pidOut, PID_MAX_OUTPUT) / PID_MAX_OUTPUT * HEAT_CYCLE_LENGTH);
+        heat(pidOut / PID_MAX_OUTPUT * HEAT_CYCLE_LENGTH);
       }
     }
 
@@ -317,22 +352,25 @@ void loop()
     }
   }
 
-  int pressureSample;
-  if (ReadXdb401PressureValue(&pressureSample) == 0)
+  if (cycle % XDB401_READ_INTERVAL_CYCLES == 0)
   {
-      float pressure = (short)(pressureSample / 256) / float(SHRT_MAX) * XDB401_MAX_BAR;
-      pressureAvg.push(pressure);
+    int pressureSample;
+    if (ReadXdb401PressureValue(&pressureSample) == 0)
+    {
+        float pressure = (short)(pressureSample / 256) / float(SHRT_MAX) * XDB401_MAX_BAR;
+        pressureAvg.push(pressure);
 
-      float displayedPressure = max(0.0f, pressureAvg.get());
+        float displayedPressure = max(0.0f, pressureAvg.get());
 
-      tft.setTextDatum(TC_DATUM);
-      int padding = tft.textWidth("00.0");
-      tft.setTextPadding(padding);
-      tft.drawFloat(displayedPressure, 1, 120, 50);
+        tft.setTextDatum(TC_DATUM);
+        int padding = tft.textWidth("00.0");
+        tft.setTextPadding(padding);
+        tft.drawFloat(displayedPressure, 1, 120, 50);
 
-      pressureDial.setValue(70, min(220, (int)(220 * displayedPressure / 16.0)));
-      pressureDial.setColor(tft.color24to16(pressureGradient.getRgb(displayedPressure)));
-      pressureDial.draw(tft);
+        pressureDial.setValue(70, min(220, (int)(220 * displayedPressure / 16.0)));
+        pressureDial.setColor(tft.color24to16(pressureGradient.getRgb(displayedPressure)));
+        pressureDial.draw(tft);
+    }
   }
 
   if (false && cycle < 32)
@@ -349,6 +387,17 @@ void loop()
   {
     delay(CYCLE_LENGTH - elapsed);
   }
+
+  if (steam && cycle % 50 == 0)
+  {
+    Serial.printf("Steam P: %f I: %f D: %f\n", steamTuner.getKp(), steamTuner.getKi(), steamTuner.getKd());
+  }
+
+  if (infusing && cycle % 50 == 0)
+  {
+    Serial.printf("Infusion P: %f I: %f D: %f\n", infusionTuner.getKp(), infusionTuner.getKi(), infusionTuner.getKd());
+  }
+
 
 #ifdef PID_TEMPERATURE_AUTOTUNE
   if (tuner.isFinished())
