@@ -13,12 +13,36 @@
 #include "gradient.h"
 #include "dimmer.h"
 
+
+// WARMUP Kp = 0.548229; Ki = 0.003539; Kd = 56.049820
+
+/*
+#define PID_P_WARMUP                      0.55
+#define PID_I_WARMUP                      0
+#define PID_D_WARMUP                      56
+*/
+
+
+/*
 #define PID_P                             2.6
 #define PID_I                             0.1
 #define PID_D                             0
+*/
+
+#define PID_P                             2.5
+#define PID_I                             0.08
+//#define PID_I                             0
+#define PID_D                             40
+
 #define PID_MAX_OUTPUT                    100.0
 
-#define TEMPERATURE_SAFETY_GUARD          125
+#define TEMPERATURE_SAFETY_GUARD                    125
+
+#define STEAM_TEMPERATURE                           120
+#define STEAM_WATER_SUPPLY_THRESHOLD_TEMPERATURE    5
+
+
+
 
 // P: 5.269382 I: 0.394954 D: 17.575706
 // P: 9.693529 I: 0.208090 D: 112.889206
@@ -28,9 +52,9 @@
 //#define PID_I_INFUSE                      0.3
 //#define PID_D_INFUSE                      64
 
-#define PID_P_INFUSE                      9.7
+#define PID_P_INFUSE                      11
 #define PID_I_INFUSE                      0.2
-#define PID_D_INFUSE                      112
+#define PID_D_INFUSE                      130
 
 
 // 13.512877 I: 0.314779 D: 145.020584
@@ -40,7 +64,7 @@
 #define PID_D_STEAM                       145
 
 #define XDB401_MAX_BAR                    20
-#define XDB401_READ_INTERVAL_CYCLES       3
+#define XDB401_READ_INTERVAL_CYCLES       1
 
 #define CYCLE_LENGTH                      40
 #define MAX31856_READ_INTERVAL_CYCLES     2
@@ -67,15 +91,15 @@ TFT_eSPI tft = TFT_eSPI();
 SPIClass hspi(HSPI);
 Adafruit_MAX31865 thermo(PIN_MAX31865_SELECT, &hspi);
 
-DataTomeMvAvg<float, double> temperateAvg(20), pressureAvg(10);
+DataTomeMvAvg<float, double> temperateAvg(20), pressureAvg(25);
 
 double temperatureSet, temperatureIs, pidOut;
 
 #ifdef PID_TEMPERATURE_AUTOTUNE
 PIDAutotuner tuner = PIDAutotuner();
-#else
-PID temperaturePid(&temperatureIs, &pidOut, &temperatureSet, PID_P, PID_I, PID_D, DIRECT);
 #endif
+
+PID temperaturePid(&temperatureIs, &pidOut, &temperatureSet, PID_P, PID_I, PID_D, DIRECT);
 
 PIDAutotuner steamTuner = PIDAutotuner();
 
@@ -109,11 +133,24 @@ void setTemperature(float t)
 
 extern void ReadRegs();
 
+unsigned int flowCounter = 0;
+
+void IRAM_ATTR incrementFlowCounter() {
+    flowCounter++;
+}
+
 void setup()
 {
   Serial.begin(9600);
 
+//	pinMode(15, INPUT_PULLDOWN);
+	attachInterrupt(15, incrementFlowCounter, RISING);
+
   Wire.begin();
+
+//delay(1000);
+//ReadRegs();
+
   SPIFFS.begin();
   
   hspi.begin(PIN_MAX31865_CLOCK, PIN_MAX31865_MISO, PIN_MAX31865_MOSI);
@@ -128,24 +165,24 @@ void setup()
   pinMode(PIN_INFUSE_SWITCH, INPUT_PULLDOWN);
   pinMode(PIN_STEAM_SWITCH, INPUT_PULLDOWN);
 
-  setTemperature(100);
+  setTemperature(95);
 
 #ifdef PID_TEMPERATURE_AUTOTUNE
   tuner.setTargetInputValue(temperatureSet);
   tuner.setLoopInterval(HEAT_CYCLE_LENGTH * 1000);
   tuner.setOutputRange(0, 100);
-  tuner.setZNMode(PIDAutotuner::ZNModeBasicPID);
-#else
+  tuner.setZNMode(PIDAutotuner::ZNModeLessOvershoot);
+#endif
+
   temperaturePid.SetOutputLimits(0, PID_MAX_OUTPUT);
   temperaturePid.SetSampleTime(HEAT_CYCLE_LENGTH);
   temperaturePid.SetMode(AUTOMATIC);
-#endif
 
 	heatingTimer = timerBegin(1, 80, true);
 	timerAttachInterrupt(heatingTimer, &switchOffHeating, true);
 
   tft.init();
-  tft.setRotation(0);
+  tft.setRotation(1);
   tft.fillScreen(TFT_BLACK);
 
   tft.loadFont("NotoSansBold15");
@@ -216,8 +253,6 @@ void loop()
       infusionTuner.setZNMode(PIDAutotuner::ZNModeBasicPID);
       infusionTuner.startTuningLoop(micros());
 
-
-      setTemperature(96);
       temperaturePid.SetTunings(PID_P_INFUSE, PID_I_INFUSE, PID_D_INFUSE);
       dimmerSetLevel(220);
       digitalWrite(PIN_VALVE, HIGH);
@@ -225,7 +260,7 @@ void loop()
     }
     else
     {
-      setTemperature(100);
+      setTemperature(95);
       temperaturePid.SetTunings(PID_P, PID_I, PID_D);
       dimmerSetLevel(0);
       valveDeadline = windowStart + 10000;
@@ -253,7 +288,7 @@ void loop()
     }
     else
     {
-      setTemperature(100);
+      setTemperature(95);
       dimmerSetLevel(0);
       temperaturePid.SetTunings(PID_P, PID_I, PID_D);
       digitalWrite(PIN_VALVE, LOW);
@@ -262,7 +297,7 @@ void loop()
 
   if (steam)
   {
-      if (cycle % STEAM_CYCLE == 0)
+      if (cycle % STEAM_CYCLE == 0 && temperatureIs > STEAM_TEMPERATURE - STEAM_WATER_SUPPLY_THRESHOLD_TEMPERATURE)
       {
          dimmerSetLevel(220);
       }
@@ -386,6 +421,19 @@ void loop()
   if (elapsed < CYCLE_LENGTH)
   {
     delay(CYCLE_LENGTH - elapsed);
+  }
+
+/*
+  if (cycle % 50 == 0)
+  {
+        Serial.printf("Temperature PID autotune result: Kp = %f; Ki = %f; Kd = %f\n", tuner.getKp(), tuner.getKi(), tuner.getKd());
+
+  }
+*/
+
+  if (cycle % 50 == 0)
+  {
+    Serial.printf("Flow count: %d\n", flowCounter);
   }
 
   if (steam && cycle % 50 == 0)

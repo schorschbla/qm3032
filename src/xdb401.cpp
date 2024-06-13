@@ -7,7 +7,8 @@
 #define NSA2860X_PCH_CONFIG1_REG    0xa4
 #define NSA2860X_COMMAND_REG        0x30
 #define NSA2860X_STATUS_REG         0x02
-#define ODR_P_10HZ_50HZ_NOTCH       0x09
+#define NSA2860X_ODR_P_10HZ_50HZ_NOTCH       0x09
+#define NSA2860X_ODR_P_37_5HZ                0x06
 
 #define NSA2860X_EEPROM_LOCK_REG         0xd9
 
@@ -99,7 +100,7 @@ int r;
   //  WriteReg(NSA2860X_PCH_CONFIG1_REG, 0xa9);
   //  Serial.printf("PCH Config1: 0x%02x\n", ReadReg(NSA2860X_PCH_CONFIG1_REG));
 
-    return;
+   // return;
 
     // START EEprom Programming
     Serial.printf("Set command 0\n");
@@ -111,7 +112,9 @@ int r;
     Serial.printf("Status: 0x%02x\n", ReadReg(NSA2860X_STATUS_REG));
 
     Serial.printf("Wirte ODR Setting\n");
-   WriteReg(NSA2860X_PCH_CONFIG1_REG, 0xa9);
+//   WriteReg(NSA2860X_PCH_CONFIG1_REG, 0xa0 | NSA2860X_ODR_P_10HZ_50HZ_NOTCH);
+   WriteReg(NSA2860X_PCH_CONFIG1_REG, 0xa0 | NSA2860X_ODR_P_37_5HZ);
+
    delay(10);
 
 
