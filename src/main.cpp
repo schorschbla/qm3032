@@ -30,9 +30,9 @@
 */
 
 #define PID_P                             2.5
-#define PID_I                             0.08
+#define PID_I                             0.01
 //#define PID_I                             0
-#define PID_D                             40
+#define PID_D                             30
 
 #define PID_MAX_OUTPUT                    100.0
 
@@ -73,6 +73,8 @@
 #define STEAM_CYCLE                       32
 #define STEAM_OFF                         2
 
+#define FLOW_CYCLES                       5
+
 #define MAX31865_RREF      430.0
 // The 'nominal' 0-degrees-C resistance of the sensor
 // 100.0 for PT100, 1000.0 for PT1000
@@ -91,7 +93,7 @@ TFT_eSPI tft = TFT_eSPI();
 SPIClass hspi(HSPI);
 Adafruit_MAX31865 thermo(PIN_MAX31865_SELECT, &hspi);
 
-DataTomeMvAvg<float, double> temperateAvg(20), pressureAvg(25);
+DataTomeMvAvg<float, double> temperateAvg(20), pressureAvg(25), flowAvg(10);
 
 double temperatureSet, temperatureIs, pidOut;
 
@@ -135,6 +137,8 @@ extern void ReadRegs();
 
 unsigned int flowCounter = 0;
 
+unsigned int lastFlowCounter = 0;
+
 void IRAM_ATTR incrementFlowCounter() {
     flowCounter++;
 }
@@ -143,8 +147,8 @@ void setup()
 {
   Serial.begin(9600);
 
-//	pinMode(15, INPUT_PULLDOWN);
-	attachInterrupt(15, incrementFlowCounter, RISING);
+	pinMode(15, INPUT_PULLDOWN);
+	attachInterrupt(15, incrementFlowCounter, CHANGE);
 
   Wire.begin();
 
@@ -206,6 +210,9 @@ void setup()
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
   tft.drawString("bar", 120 - 14, 85);
   tft.drawString("°C", 120 - 8, 120 + 23);
+  tft.drawString("ml", 120 + 33, 106);
+  tft.drawLine(120 + 36, 122, 120 + 37 + 12, 122, TFT_WHITE);
+  tft.drawString("s", 120 + 39, 124);
 
   tft.loadFont("NotoSansBold36");
 
@@ -254,16 +261,16 @@ void loop()
       infusionTuner.startTuningLoop(micros());
 
       temperaturePid.SetTunings(PID_P_INFUSE, PID_I_INFUSE, PID_D_INFUSE);
-      dimmerSetLevel(220);
+      dimmerSetLevel(180);
       digitalWrite(PIN_VALVE, HIGH);
       valveDeadline = 0;
-    }
+   }
     else
     {
       setTemperature(95);
       temperaturePid.SetTunings(PID_P, PID_I, PID_D);
       dimmerSetLevel(0);
-      valveDeadline = windowStart + 10000;
+      valveDeadline = windowStart + 2000;
     }
   }
 
@@ -406,6 +413,19 @@ void loop()
         pressureDial.setColor(tft.color24to16(pressureGradient.getRgb(displayedPressure)));
         pressureDial.draw(tft);
     }
+  }
+
+  if (cycle % FLOW_CYCLES == 0)
+  {
+    unsigned int currentFlowCounter = flowCounter;
+    flowAvg.push((currentFlowCounter - lastFlowCounter) * 0.05 / (FLOW_CYCLES * CYCLE_LENGTH / 1000.0));
+
+        tft.setTextDatum(TC_DATUM);
+        int padding = tft.textWidth("0.0");
+        tft.setTextPadding(padding);
+        tft.drawFloat(flowAvg.get(), 1, 120, 105);
+
+    lastFlowCounter = currentFlowCounter;
   }
 
   if (false && cycle < 32)
