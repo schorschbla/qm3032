@@ -52,7 +52,7 @@
 //#define PID_I_INFUSE                      0.3
 //#define PID_D_INFUSE                      64
 
-#define PID_P_INFUSE                      11
+#define PID_P_INFUSE                      30
 #define PID_I_INFUSE                      0.2
 #define PID_D_INFUSE                      130
 
@@ -242,6 +242,8 @@ unsigned long valveDeadline;
 bool infusing = false;
 bool steam = false;
 
+unsigned long infuseStart;
+
 void loop()
 {
   unsigned long windowStart = millis();
@@ -261,9 +263,10 @@ void loop()
       infusionTuner.startTuningLoop(micros());
 
       temperaturePid.SetTunings(PID_P_INFUSE, PID_I_INFUSE, PID_D_INFUSE);
-      dimmerSetLevel(180);
       digitalWrite(PIN_VALVE, HIGH);
       valveDeadline = 0;
+
+      infuseStart = windowStart;
    }
     else
     {
@@ -302,7 +305,12 @@ void loop()
     }
   }
 
-  if (steam)
+  if (infusing)
+  {
+      unsigned char pumpValue = 150 + min(1.0, (windowStart - infuseStart) / 4000.0) * 50;
+      dimmerSetLevel(pumpValue);
+  }
+  else if (steam)
   {
       if (cycle % STEAM_CYCLE == 0 && temperatureIs > STEAM_TEMPERATURE - STEAM_WATER_SUPPLY_THRESHOLD_TEMPERATURE)
       {
