@@ -31,8 +31,8 @@
 #define PID_D                             0
 */
 
-#define PID_P                             2.5
-#define PID_I                             0.01
+#define PID_P                             2.6
+#define PID_I                             0.05
 //#define PID_I                             0
 #define PID_D                             30
 
@@ -41,32 +41,26 @@
 #define TEMPERATURE_SAFETY_GUARD                    125
 
 #define STEAM_TEMPERATURE                           120
-#define STEAM_WATER_SUPPLY_THRESHOLD_TEMPERATURE    5
+#define STEAM_WATER_SUPPLY_THRESHOLD_TEMPERATURE    7
 
-
-
+#define TEMPERATURE                       92.0
+#define TEMPERATURE_ARRIVAL_THRESHOLD     4
+#define TEMPERATURE_ARRIVAL_MINIMUM_TIME_BETWEEN_CHANGES     5000
 
 // P: 5.269382 I: 0.394954 D: 17.575706
 // P: 9.693529 I: 0.208090 D: 112.889206
 // P: 12.668172 I: 0.274426 D: 146.198624
 
-//#define PID_P_INFUSE                      7.5
-//#define PID_I_INFUSE                      0.3
-//#define PID_D_INFUSE                      64
-
 #define PID_P_INFUSE                      30
 #define PID_I_INFUSE                      0.2
 #define PID_D_INFUSE                      130
 
-
-#define PUMP_RAMPUP_TIME                  7000
-#define PUMP_MIN_POWER                    150
-
-// 13.512877 I: 0.314779 D: 145.020584
-
 #define PID_P_STEAM                       13.5
 #define PID_I_STEAM                       0.31
 #define PID_D_STEAM                       145
+
+#define PUMP_RAMPUP_TIME                  7000
+#define PUMP_MIN_POWER                    150
 
 #define XDB401_MAX_BAR                    20
 #define XDB401_READ_INTERVAL_CYCLES       1
@@ -79,12 +73,11 @@
 #define STEAM_OFF                         2
 
 #define FLOW_CYCLES                       5
+#define FLOW_ML_PER_TICK                  0.05
 
 #define SPLASH_IMAGE_DURATION             10000
 
 #define MAX31865_RREF      430.0
-// The 'nominal' 0-degrees-C resistance of the sensor
-// 100.0 for PT100, 1000.0 for PT1000
 #define MAX31865_RNOMINAL  100.0
 
 #define HEAT_CYCLE_LENGTH (MAX31856_READ_INTERVAL_CYCLES * TEMPERATURE_PID_CYCLE_FACTOR * CYCLE_LENGTH)
@@ -108,7 +101,7 @@ double temperatureSet, temperatureIs, pidOut;
 PIDAutotuner tuner = PIDAutotuner();
 #endif
 
-PID temperaturePid(&temperatureIs, &pidOut, &temperatureSet, PID_P, PID_I, PID_D, DIRECT);
+PID temperaturePid(&temperatureIs, &pidOut, &temperatureSet, PID_P, 0, 0, DIRECT);
 
 PIDAutotuner steamTuner = PIDAutotuner();
 
@@ -145,7 +138,7 @@ void IRAM_ATTR switchOffHeating() {
     digitalWrite(PIN_HEATING, LOW);
 }
 
-unsigned char splashBuf[256];
+unsigned char splashBuf[4096];
 
 void setTemperature(float t)
 {
@@ -242,7 +235,7 @@ void setup()
   pinMode(PIN_INFUSE_SWITCH, INPUT_PULLDOWN);
   pinMode(PIN_STEAM_SWITCH, INPUT_PULLDOWN);
 
-  setTemperature(95);
+  setTemperature(TEMPERATURE);
 
 #ifdef PID_TEMPERATURE_AUTOTUNE
   tuner.setTargetInputValue(temperatureSet);
@@ -265,8 +258,7 @@ void setup()
 
   dimmerBegin(0);
 
-
-getSplashImages();
+  getSplashImages();
 
 #ifdef PID_TEMPERATURE_AUTOTUNE
   tuner.startTuningLoop(micros());
@@ -293,6 +285,9 @@ bool steam = false;
 unsigned long infuseStart;
 
 unsigned int splashCurrent = 0;
+
+bool temperatureArrival = false;
+unsigned int lastTemperatureArrivalChange = 0;
 
 void updateUiTemperature()
 {
@@ -391,28 +386,33 @@ void loop()
     infusing = !infusing;
     if (infusing)
     {
-      initUiInfuse(tft);
 
+#ifdef PID_TEMPERATURE_AUTOTUNE
       infusionTuner.setTargetInputValue(96);
       infusionTuner.setLoopInterval(HEAT_CYCLE_LENGTH * 1000);
       infusionTuner.setOutputRange(0, 100);
       infusionTuner.setZNMode(PIDAutotuner::ZNModeBasicPID);
       infusionTuner.startTuningLoop(micros());
+#endif
 
       temperaturePid.SetTunings(PID_P_INFUSE, PID_I_INFUSE, PID_D_INFUSE);
       digitalWrite(PIN_VALVE, HIGH);
       valveDeadline = 0;
 
       infuseStart = windowStart;
+
+      initUiInfuse(tft);
    }
     else
     {
-      initUiStandby(tft);
+      setTemperature(TEMPERATURE);
+      temperaturePid.SetTunings(PID_P, 0, 0);
+      temperatureArrival = false;
 
-      setTemperature(95);
-      temperaturePid.SetTunings(PID_P, PID_I, PID_D);
       dimmerSetLevel(0);
       valveDeadline = windowStart + 2000;
+
+      initUiStandby(tft);
     }
   }
 
@@ -421,28 +421,31 @@ void loop()
     steam = !steam;
     if (steam)
     {
-      initUiInfuse(tft);
-
-      steamTuner.setTargetInputValue(117);
-      steamTuner.setTuningCycles(5);
+#ifdef PID_TEMPERATURE_AUTOTUNE
+      steamTuner.setTargetInputValue(STEAM_TEMPERATURE);
+      steamTuner.setTuningCycles(3);
       steamTuner.setLoopInterval(HEAT_CYCLE_LENGTH * 1000);
       steamTuner.setOutputRange(0, 100);
       steamTuner.setZNMode(PIDAutotuner::ZNModeBasicPID);
       steamTuner.startTuningLoop(micros());
+#endif
 
-      setTemperature(120);
+      setTemperature(STEAM_TEMPERATURE);
       temperaturePid.SetTunings(PID_P_STEAM, PID_I_STEAM, PID_D_STEAM);
       digitalWrite(PIN_VALVE, HIGH);
       valveDeadline = 0;
+
+      initUiInfuse(tft);
     }
     else
     {
-      initUiStandby(tft);
-
-      setTemperature(95);
+      setTemperature(TEMPERATURE);
       dimmerSetLevel(0);
-      temperaturePid.SetTunings(PID_P, PID_I, PID_D);
+      temperaturePid.SetTunings(PID_P, 0, 0);
+      temperatureArrival = false;
       digitalWrite(PIN_VALVE, LOW);
+
+      initUiStandby(tft);
     }
   }
 
@@ -475,7 +478,18 @@ void loop()
     if (cycle % (MAX31856_READ_INTERVAL_CYCLES * TEMPERATURE_PID_CYCLE_FACTOR) == 0)
     { 
 #ifdef PID_TEMPERATURE_AUTOTUNE
-      pidOut = tuner.tunePID(temperatureIs, micros());
+      if (infusing)
+      {
+        pidOut = infusionTuner.tunePID(temperatureIs, micros());
+      }
+      else if (steam)
+      {
+        pidOut = steamTuner.tunePID(temperatureIs, micros());
+      }
+      else
+      {
+        pidOut = tuner.tunePID(temperatureIs, micros());
+      }
 #else
       temperaturePid.Compute();
 #endif
@@ -486,6 +500,19 @@ void loop()
     }
 
     temperateAvg.push(temperatureIs);
+
+    if (!steam && !infusing)
+    {
+      float delta = TEMPERATURE - temperateAvg.get();
+      bool arrival = abs(delta) < TEMPERATURE_ARRIVAL_THRESHOLD;
+      if (arrival != temperatureArrival && lastTemperatureArrivalChange + TEMPERATURE_ARRIVAL_MINIMUM_TIME_BETWEEN_CHANGES < windowStart)
+      {
+        temperatureArrival = arrival;
+        lastTemperatureArrivalChange = windowStart;
+        temperaturePid.SetTunings(PID_P, arrival ? PID_I : 0, arrival ? PID_D : 0);
+      } 
+    }
+
     updateUiTemperature();
   }
 
@@ -503,41 +530,28 @@ void loop()
   if (cycle % FLOW_CYCLES == 0)
   {
     unsigned int currentFlowCounter = flowCounter;
-    flowAvg.push((currentFlowCounter - lastFlowCounter) * 0.05 / (FLOW_CYCLES * CYCLE_LENGTH / 1000.0));
-
+    float flow = (currentFlowCounter - lastFlowCounter) * FLOW_ML_PER_TICK / (FLOW_CYCLES * CYCLE_LENGTH / 1000.0);
+    flowAvg.push(flow);
     updateUiFlow();
-
     lastFlowCounter = currentFlowCounter;
   }
 
   if (!infusing && !steam && !splashFiles.empty())
   {
     int splashCycle = cycle % (SPLASH_IMAGE_DURATION / CYCLE_LENGTH);
-    if (splashCycle < 32)
+    if (splashCycle < 8)
     {
         if (splashCycle == 0)
         {
           splashCurrent = (splashCurrent + 1) % splashFiles.size();
+          splashFiles[splashCurrent].seek(0);
         }
-        for (int i = 0; i < 4; ++i)
-        {
-          int row = i * 32 + splashCycle;
-          splashFiles[splashCurrent].seek(row * 256);
-          splashFiles[splashCurrent].read(splashBuf, 256);
-          tft.pushImage(56, 110 + row, 128, 1, (uint16_t *)splashBuf);
-        }
+        splashFiles[splashCurrent].read(splashBuf, 4096);        
+        tft.pushImage(56, 110 + splashCycle * 16, 128, 16, (uint16_t *)splashBuf);
     }
-/*
-
-    size_t pos = 0;
-    while (pos < 1024)
-      pos += splashFile.read(splashBuf + pos, 1024 - pos);
-    tft.pushImage(56, 110 + cycle * 4, 128, 4, (uint16_t *)splashBuf);
-    */
   }
 
-  unsigned long windowEnd = millis();
-  unsigned int elapsed = windowEnd - windowStart;
+  unsigned int elapsed = millis() - windowStart;
   if (elapsed < CYCLE_LENGTH)
   {
     delay(CYCLE_LENGTH - elapsed);
@@ -546,8 +560,7 @@ void loop()
 #ifdef PID_TEMPERATURE_AUTOTUNE
   if (tuner.isFinished())
   {
-    Serial.printf("Temperature PID autotune result: Kp = %f; Ki = %f; Kd = %f\n", tuner.getKp(), tuner.getKi(), tuner.getKd());
-    tuner.startTuningLoop(micros());
+    Serial.printf("PID autotune result: Kp = %f; Ki = %f; Kd = %f\n", tuner.getKp(), tuner.getKi(), tuner.getKd());
   }
 #endif
 
