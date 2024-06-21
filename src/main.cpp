@@ -9,6 +9,8 @@
 #include <PID_v1.h>
 #include <pidautotuner.h>
 
+#include <vector>
+
 #include "gauge.h"
 #include "gradient.h"
 #include "dimmer.h"
@@ -57,6 +59,9 @@
 #define PID_D_INFUSE                      130
 
 
+#define PUMP_RAMPUP_TIME                  7000
+#define PUMP_MIN_POWER                    150
+
 // 13.512877 I: 0.314779 D: 145.020584
 
 #define PID_P_STEAM                       13.5
@@ -74,6 +79,8 @@
 #define STEAM_OFF                         2
 
 #define FLOW_CYCLES                       5
+
+#define SPLASH_IMAGE_DURATION             10000
 
 #define MAX31865_RREF      430.0
 // The 'nominal' 0-degrees-C resistance of the sensor
@@ -107,7 +114,7 @@ PIDAutotuner steamTuner = PIDAutotuner();
 
 PIDAutotuner infusionTuner = PIDAutotuner();
 
-Gauge pressureDial(120, 120, 100, 16, TFT_BLACK);
+Gauge mainDial(120, 120, 100, 16, TFT_BLACK);
 Gauge temperatureOffsetDial(120, 120, 100, 16, TFT_BLACK);
 
 Gradient tempGradient(heatGradient, temperatureHeatWeights, 6);
@@ -115,7 +122,20 @@ Gradient pressureGradient(heatGradient, pressureHeatWeights, 6);
 
 hw_timer_t *heatingTimer = NULL;
 
-fs::File splashFile;
+std::vector<fs::File> splashFiles;
+
+void getSplashImages()
+{
+  fs::File root = SPIFFS.open("/"); 
+
+  while (fs::File file = root.openNextFile()) 
+  {
+      if (!strncmp(file.name(), "splash-", 7))
+      {
+        splashFiles.push_back(file);
+      }
+  }
+}
 
 extern void dimmerBegin(uint8_t timerId, uint8_t zeroCrossPin, uint8_t firstTriacPin, uint8_t secondTriacPin);
 extern unsigned int zeroCrossCount;
@@ -125,7 +145,7 @@ void IRAM_ATTR switchOffHeating() {
     digitalWrite(PIN_HEATING, LOW);
 }
 
-unsigned char splashBuf[1024];
+unsigned char splashBuf[256];
 
 void setTemperature(float t)
 {
@@ -143,6 +163,62 @@ void IRAM_ATTR incrementFlowCounter() {
     flowCounter++;
 }
 
+void initUiStandby(TFT_eSPI &tft)
+{
+  tft.fillScreen(TFT_BLACK);
+
+  tft.setTextPadding(0);
+  tft.setTextDatum(0);
+  tft.loadFont("NotoSansBold15");
+
+  GaugeScale pressureScale(120,120, 93, 1, 70, 220, 4, TFT_DARKGREY, TFT_BLACK);
+  pressureScale.draw(tft, 5);
+  pressureScale.drawLabel(tft, 0, "0", 2, -14);
+  pressureScale.drawLabel(tft, 1, "30", 2, 2);
+  pressureScale.drawLabel(tft, 2, "60", -8, 3);
+  pressureScale.drawLabel(tft, 3, "90", -18);
+  pressureScale.drawLabel(tft, 4, "120", -27, -14);
+
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.drawString("°C", 120 + 33, 85);
+
+  tft.loadFont("NotoSansBold36");
+}
+
+void initUiInfuse(TFT_eSPI &tft)
+{
+  tft.fillScreen(TFT_BLACK);
+
+  tft.setTextPadding(0);
+  tft.setTextDatum(0);
+  tft.loadFont("NotoSansBold15");
+
+  GaugeScale pressureScale(120,120, 93, 1, 70, 220, 4, TFT_DARKGREY, TFT_BLACK);
+  pressureScale.draw(tft, 5);
+  pressureScale.drawLabel(tft, 0, "0", 2, -14);
+  pressureScale.drawLabel(tft, 1, "4", 2);
+  pressureScale.drawLabel(tft, 2, "8", -4, 2);
+  pressureScale.drawLabel(tft, 3, "12", -18);
+  pressureScale.drawLabel(tft, 4, "16", -18, -14);
+
+  GaugeScale tempOffsetScale(120, 120, 93, 1, -50, 100, 2, TFT_DARKGREY, TFT_BLACK);
+  tempOffsetScale.draw(tft, 5);
+  tempOffsetScale.drawLabel(tft, 0, "+5", -24, -6);
+  tempOffsetScale.drawLabel(tft, 1, "0", 0, -15);
+  tempOffsetScale.drawLabel(tft, 1, "+", -9, -16);
+  tempOffsetScale.drawLabel(tft, 1, "_", -8, -18);
+  tempOffsetScale.drawLabel(tft, 2, "-5", 8, -6);
+
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.drawString("bar", 120 - 14, 85);
+  tft.drawString("°C", 120 - 8, 120 + 23);
+  tft.drawString("ml", 120 + 33, 106);
+  tft.drawLine(120 + 36, 122, 120 + 37 + 12, 122, TFT_WHITE);
+  tft.drawString("s", 120 + 39, 124);
+
+  tft.loadFont("NotoSansBold36");
+}
+
 void setup()
 {
   Serial.begin(9600);
@@ -151,9 +227,6 @@ void setup()
 	attachInterrupt(15, incrementFlowCounter, CHANGE);
 
   Wire.begin();
-
-//delay(1000);
-//ReadRegs();
 
   SPIFFS.begin();
   
@@ -187,38 +260,13 @@ void setup()
 
   tft.init();
   tft.setRotation(1);
-  tft.fillScreen(TFT_BLACK);
 
-  tft.loadFont("NotoSansBold15");
-
-  GaugeScale pressureScale(120,120, 93, 1, 70, 220, 4, TFT_DARKGREY, TFT_BLACK);
-  pressureScale.draw(tft, 5);
-  pressureScale.drawLabel(tft, 0, "0", 2, -14);
-  pressureScale.drawLabel(tft, 1, "4", 2);
-  pressureScale.drawLabel(tft, 2, "8", -4, 2);
-  pressureScale.drawLabel(tft, 3, "12", -18);
-  pressureScale.drawLabel(tft, 4, "16", -18, -14);
-
-  GaugeScale tempOffsetScale(120, 120, 93, 1, -50, 100, 2, TFT_DARKGREY, TFT_BLACK);
-  tempOffsetScale.draw(tft, 5);
-  tempOffsetScale.drawLabel(tft, 0, "+5", -24, -6);
-  tempOffsetScale.drawLabel(tft, 1, "0", 0, -15);
-  tempOffsetScale.drawLabel(tft, 1, "+", -9, -16);
-  tempOffsetScale.drawLabel(tft, 1, "_", -8, -18);
-  tempOffsetScale.drawLabel(tft, 2, "-5", 8, -6);
-
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.drawString("bar", 120 - 14, 85);
-  tft.drawString("°C", 120 - 8, 120 + 23);
-  tft.drawString("ml", 120 + 33, 106);
-  tft.drawLine(120 + 36, 122, 120 + 37 + 12, 122, TFT_WHITE);
-  tft.drawString("s", 120 + 39, 124);
-
-  tft.loadFont("NotoSansBold36");
+  initUiStandby(tft);
 
   dimmerBegin(0);
 
-splashFile = SPIFFS.open("/splash-karl.raw");
+
+getSplashImages();
 
 #ifdef PID_TEMPERATURE_AUTOTUNE
   tuner.startTuningLoop(micros());
@@ -244,123 +292,14 @@ bool steam = false;
 
 unsigned long infuseStart;
 
-void loop()
+unsigned int splashCurrent = 0;
+
+void updateUiTemperature()
 {
-  unsigned long windowStart = millis();
+  float temperatureAvgDegree = temperateAvg.get();
 
-  cycle++;
-
-  if (!steam && digitalRead(PIN_INFUSE_SWITCH) != infusing)
+  if (infusing || steam)
   {
-    infusing = !infusing;
-    if (infusing)
-    {
-
-      infusionTuner.setTargetInputValue(96);
-      infusionTuner.setLoopInterval(HEAT_CYCLE_LENGTH * 1000);
-      infusionTuner.setOutputRange(0, 100);
-      infusionTuner.setZNMode(PIDAutotuner::ZNModeBasicPID);
-      infusionTuner.startTuningLoop(micros());
-
-      temperaturePid.SetTunings(PID_P_INFUSE, PID_I_INFUSE, PID_D_INFUSE);
-      digitalWrite(PIN_VALVE, HIGH);
-      valveDeadline = 0;
-
-      infuseStart = windowStart;
-   }
-    else
-    {
-      setTemperature(95);
-      temperaturePid.SetTunings(PID_P, PID_I, PID_D);
-      dimmerSetLevel(0);
-      valveDeadline = windowStart + 2000;
-    }
-  }
-
-  if (!infusing && digitalRead(PIN_STEAM_SWITCH) != steam)
-  {
-    steam = !steam;
-    if (steam)
-    {
-      steamTuner.setTargetInputValue(117);
-      steamTuner.setTuningCycles(5);
-      steamTuner.setLoopInterval(HEAT_CYCLE_LENGTH * 1000);
-      steamTuner.setOutputRange(0, 100);
-      steamTuner.setZNMode(PIDAutotuner::ZNModeBasicPID);
-      steamTuner.startTuningLoop(micros());
-
-      //temperaturePid.SetOutputLimits(-5.0, 5.0);
-
-      setTemperature(120);
-      temperaturePid.SetTunings(PID_P_STEAM, PID_I_STEAM, PID_D_STEAM);
-      digitalWrite(PIN_VALVE, HIGH);
-      valveDeadline = 0;
-    }
-    else
-    {
-      setTemperature(95);
-      dimmerSetLevel(0);
-      temperaturePid.SetTunings(PID_P, PID_I, PID_D);
-      digitalWrite(PIN_VALVE, LOW);
-    }
-  }
-
-  if (infusing)
-  {
-      unsigned char pumpValue = 150 + min(1.0, (windowStart - infuseStart) / 4000.0) * 50;
-      dimmerSetLevel(pumpValue);
-  }
-  else if (steam)
-  {
-      if (cycle % STEAM_CYCLE == 0 && temperatureIs > STEAM_TEMPERATURE - STEAM_WATER_SUPPLY_THRESHOLD_TEMPERATURE)
-      {
-         dimmerSetLevel(220);
-      }
-      else if (cycle % STEAM_CYCLE == STEAM_OFF)
-      {
-         dimmerSetLevel(0);
-      }
-  }
-
-  if (valveDeadline != 0 && windowStart > valveDeadline) 
-  {
-    digitalWrite(PIN_VALVE, LOW);
-  }
-
-  if (cycle % MAX31856_READ_INTERVAL_CYCLES == 0)
-  {
-    uint16_t rtd = thermo.readRTDCont();
-    temperatureIs = thermo.calculateTemperature(rtd, MAX31865_RNOMINAL, MAX31865_RREF);
-
-    if (cycle % (MAX31856_READ_INTERVAL_CYCLES * TEMPERATURE_PID_CYCLE_FACTOR) == 0)
-    { 
-#ifdef PID_TEMPERATURE_AUTOTUNE
-      pidOut = tuner.tunePID(temperatureIs, micros());
-#else
-      temperaturePid.Compute();
-#endif
-
-      if (steam)
-      {
-        //pidOut = steamTuner.tunePID(temperatureIs, micros());
-        Serial.printf("Pidout: %f\n", pidOut);
-      }
-      else if (infusing)
-      {
-        //pidOut = infusionTuner.tunePID(temperatureIs, micros());
-        Serial.printf("Infusion Pidout: %f temp: %f\n", pidOut, temperatureIs);
-      }
-
-      if (pidOut > 0) 
-      {
-        heat(pidOut / PID_MAX_OUTPUT * HEAT_CYCLE_LENGTH);
-      }
-    }
-
-    temperateAvg.push(temperatureIs);
-
-    float temperatureAvgDegree = temperateAvg.get();
-
     int tempOffsetDialStart;
     int tempOffsetDialAmount;
 
@@ -401,6 +340,154 @@ void loop()
       tft.drawFloat(temperatureAvgDegree, temperatureAvgDegree > 99.9 ? 0 : 1, 120, 159);    
     }
   }
+  else
+  {
+    mainDial.setValue(70, min(220, (int)(220 * temperatureAvgDegree / 120.0)));
+    mainDial.setColor(tft.color24to16(tempGradient.getRgb(temperatureAvgDegree)));
+    mainDial.draw(tft);  
+
+    tft.setTextDatum(TC_DATUM);
+    int padding = tft.textWidth("00.0");
+    tft.setTextPadding(padding);
+    int sanitizedTemp = (int) temperatureAvgDegree;
+    tft.drawFloat(temperatureAvgDegree, temperatureAvgDegree > 99.9 ? 0 : 1, 120 - 8, 70);      
+  }
+}
+
+void updateUiPressure()
+{
+  if (infusing || steam)
+  {
+    float displayedPressure = max(0.0f, pressureAvg.get());
+
+    tft.setTextDatum(TC_DATUM);
+    int padding = tft.textWidth("00.0");
+    tft.setTextPadding(padding);
+    tft.drawFloat(displayedPressure, 1, 120, 50);
+
+    mainDial.setValue(70, min(220, (int)(220 * displayedPressure / 16.0)));
+    mainDial.setColor(tft.color24to16(pressureGradient.getRgb(displayedPressure)));
+    mainDial.draw(tft);
+  }
+}
+
+void updateUiFlow()
+{
+  if (infusing || steam)
+  {
+      tft.setTextDatum(TC_DATUM);
+      int padding = tft.textWidth("0.0");
+      tft.setTextPadding(padding);
+      tft.drawFloat(flowAvg.get(), 1, 120, 105);
+  }
+}
+
+void loop()
+{
+  unsigned long windowStart = millis();
+
+  if (!steam && digitalRead(PIN_INFUSE_SWITCH) != infusing)
+  {
+    infusing = !infusing;
+    if (infusing)
+    {
+      initUiInfuse(tft);
+
+      infusionTuner.setTargetInputValue(96);
+      infusionTuner.setLoopInterval(HEAT_CYCLE_LENGTH * 1000);
+      infusionTuner.setOutputRange(0, 100);
+      infusionTuner.setZNMode(PIDAutotuner::ZNModeBasicPID);
+      infusionTuner.startTuningLoop(micros());
+
+      temperaturePid.SetTunings(PID_P_INFUSE, PID_I_INFUSE, PID_D_INFUSE);
+      digitalWrite(PIN_VALVE, HIGH);
+      valveDeadline = 0;
+
+      infuseStart = windowStart;
+   }
+    else
+    {
+      initUiStandby(tft);
+
+      setTemperature(95);
+      temperaturePid.SetTunings(PID_P, PID_I, PID_D);
+      dimmerSetLevel(0);
+      valveDeadline = windowStart + 2000;
+    }
+  }
+
+  if (!infusing && digitalRead(PIN_STEAM_SWITCH) != steam)
+  {
+    steam = !steam;
+    if (steam)
+    {
+      initUiInfuse(tft);
+
+      steamTuner.setTargetInputValue(117);
+      steamTuner.setTuningCycles(5);
+      steamTuner.setLoopInterval(HEAT_CYCLE_LENGTH * 1000);
+      steamTuner.setOutputRange(0, 100);
+      steamTuner.setZNMode(PIDAutotuner::ZNModeBasicPID);
+      steamTuner.startTuningLoop(micros());
+
+      setTemperature(120);
+      temperaturePid.SetTunings(PID_P_STEAM, PID_I_STEAM, PID_D_STEAM);
+      digitalWrite(PIN_VALVE, HIGH);
+      valveDeadline = 0;
+    }
+    else
+    {
+      initUiStandby(tft);
+
+      setTemperature(95);
+      dimmerSetLevel(0);
+      temperaturePid.SetTunings(PID_P, PID_I, PID_D);
+      digitalWrite(PIN_VALVE, LOW);
+    }
+  }
+
+  if (infusing)
+  {
+      unsigned char pumpValue = PUMP_MIN_POWER + min(1.0, (windowStart - infuseStart) / (double)PUMP_RAMPUP_TIME) * 60;
+      dimmerSetLevel(pumpValue);
+  }
+  else if (steam)
+  {
+      if (cycle % STEAM_CYCLE == 0 && temperatureIs > STEAM_TEMPERATURE - STEAM_WATER_SUPPLY_THRESHOLD_TEMPERATURE)
+      {
+         dimmerSetLevel(220);
+      }
+      else if (cycle % STEAM_CYCLE == STEAM_OFF)
+      {
+         dimmerSetLevel(0);
+      }
+  }
+
+  if (valveDeadline != 0 && windowStart > valveDeadline) 
+  {
+    digitalWrite(PIN_VALVE, LOW);
+  }
+
+  if (cycle % MAX31856_READ_INTERVAL_CYCLES == 0)
+  {
+    temperatureIs = thermo.calculateTemperature(thermo.readRTDCont(), MAX31865_RNOMINAL, MAX31865_RREF);
+
+    if (cycle % (MAX31856_READ_INTERVAL_CYCLES * TEMPERATURE_PID_CYCLE_FACTOR) == 0)
+    { 
+#ifdef PID_TEMPERATURE_AUTOTUNE
+      pidOut = tuner.tunePID(temperatureIs, micros());
+#else
+      temperaturePid.Compute();
+#endif
+      if (pidOut > 0) 
+      {
+        heat(pidOut / PID_MAX_OUTPUT * HEAT_CYCLE_LENGTH);
+      }
+    }
+
+    temperateAvg.push(temperatureIs);
+    updateUiTemperature();
+  }
 
   if (cycle % XDB401_READ_INTERVAL_CYCLES == 0)
   {
@@ -409,17 +496,7 @@ void loop()
     {
         float pressure = (short)(pressureSample / 256) / float(SHRT_MAX) * XDB401_MAX_BAR;
         pressureAvg.push(pressure);
-
-        float displayedPressure = max(0.0f, pressureAvg.get());
-
-        tft.setTextDatum(TC_DATUM);
-        int padding = tft.textWidth("00.0");
-        tft.setTextPadding(padding);
-        tft.drawFloat(displayedPressure, 1, 120, 50);
-
-        pressureDial.setValue(70, min(220, (int)(220 * displayedPressure / 16.0)));
-        pressureDial.setColor(tft.color24to16(pressureGradient.getRgb(displayedPressure)));
-        pressureDial.draw(tft);
+        updateUiPressure();
     }
   }
 
@@ -428,20 +505,35 @@ void loop()
     unsigned int currentFlowCounter = flowCounter;
     flowAvg.push((currentFlowCounter - lastFlowCounter) * 0.05 / (FLOW_CYCLES * CYCLE_LENGTH / 1000.0));
 
-        tft.setTextDatum(TC_DATUM);
-        int padding = tft.textWidth("0.0");
-        tft.setTextPadding(padding);
-        tft.drawFloat(flowAvg.get(), 1, 120, 105);
+    updateUiFlow();
 
     lastFlowCounter = currentFlowCounter;
   }
 
-  if (false && cycle < 32)
+  if (!infusing && !steam && !splashFiles.empty())
   {
+    int splashCycle = cycle % (SPLASH_IMAGE_DURATION / CYCLE_LENGTH);
+    if (splashCycle < 32)
+    {
+        if (splashCycle == 0)
+        {
+          splashCurrent = (splashCurrent + 1) % splashFiles.size();
+        }
+        for (int i = 0; i < 4; ++i)
+        {
+          int row = i * 32 + splashCycle;
+          splashFiles[splashCurrent].seek(row * 256);
+          splashFiles[splashCurrent].read(splashBuf, 256);
+          tft.pushImage(56, 110 + row, 128, 1, (uint16_t *)splashBuf);
+        }
+    }
+/*
+
     size_t pos = 0;
     while (pos < 1024)
       pos += splashFile.read(splashBuf + pos, 1024 - pos);
     tft.pushImage(56, 110 + cycle * 4, 128, 4, (uint16_t *)splashBuf);
+    */
   }
 
   unsigned long windowEnd = millis();
@@ -451,30 +543,6 @@ void loop()
     delay(CYCLE_LENGTH - elapsed);
   }
 
-/*
-  if (cycle % 50 == 0)
-  {
-        Serial.printf("Temperature PID autotune result: Kp = %f; Ki = %f; Kd = %f\n", tuner.getKp(), tuner.getKi(), tuner.getKd());
-
-  }
-*/
-
-  if (cycle % 50 == 0)
-  {
-    Serial.printf("Flow count: %d\n", flowCounter);
-  }
-
-  if (steam && cycle % 50 == 0)
-  {
-    Serial.printf("Steam P: %f I: %f D: %f\n", steamTuner.getKp(), steamTuner.getKi(), steamTuner.getKd());
-  }
-
-  if (infusing && cycle % 50 == 0)
-  {
-    Serial.printf("Infusion P: %f I: %f D: %f\n", infusionTuner.getKp(), infusionTuner.getKi(), infusionTuner.getKd());
-  }
-
-
 #ifdef PID_TEMPERATURE_AUTOTUNE
   if (tuner.isFinished())
   {
@@ -482,4 +550,6 @@ void loop()
     tuner.startTuningLoop(micros());
   }
 #endif
+
+  cycle++;
 }
