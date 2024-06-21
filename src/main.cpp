@@ -78,7 +78,7 @@
 #define MAX31865_RREF      430.0
 // The 'nominal' 0-degrees-C resistance of the sensor
 // 100.0 for PT100, 1000.0 for PT1000
-#define MAX31865_RNOMINAL  100.8
+#define MAX31865_RNOMINAL  100.0
 
 #define HEAT_CYCLE_LENGTH (MAX31856_READ_INTERVAL_CYCLES * TEMPERATURE_PID_CYCLE_FACTOR * CYCLE_LENGTH)
 
@@ -159,7 +159,7 @@ void setup()
   
   hspi.begin(PIN_MAX31865_CLOCK, PIN_MAX31865_MISO, PIN_MAX31865_MOSI);
   
-  thermo.begin(MAX31865_2WIRE);
+  thermo.begin(MAX31865_3WIRE);
   thermo.enable50Hz(true);
   thermo.autoConvert(true);
   thermo.enableBias(true);
