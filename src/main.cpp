@@ -43,7 +43,7 @@
 #define STEAM_TEMPERATURE                           120
 #define STEAM_WATER_SUPPLY_THRESHOLD_TEMPERATURE    7
 
-#define TEMPERATURE                       92.0
+#define TEMPERATURE                       89.0
 #define TEMPERATURE_ARRIVAL_THRESHOLD     4
 #define TEMPERATURE_ARRIVAL_MINIMUM_TIME_BETWEEN_CHANGES     5000
 
@@ -51,7 +51,7 @@
 // P: 9.693529 I: 0.208090 D: 112.889206
 // P: 12.668172 I: 0.274426 D: 146.198624
 
-#define PID_P_INFUSE                      30
+#define PID_P_INFUSE                      50
 #define PID_I_INFUSE                      0.2
 #define PID_D_INFUSE                      130
 
@@ -212,6 +212,16 @@ void initUiInfuse(TFT_eSPI &tft)
   tft.loadFont("NotoSansBold36");
 }
 
+void setPidTunings(double Kp, double Ki, double Kd)
+{
+  pidOut = 0;
+  temperatureIs = 0;
+  temperaturePid = PID(&temperatureIs, &pidOut, &temperatureSet, Kp, Ki, Kd, DIRECT);
+  temperaturePid.SetOutputLimits(0, PID_MAX_OUTPUT);
+  temperaturePid.SetSampleTime(HEAT_CYCLE_LENGTH);
+  temperaturePid.SetMode(AUTOMATIC);
+}
+
 void setup()
 {
   Serial.begin(9600);
@@ -236,6 +246,7 @@ void setup()
   pinMode(PIN_STEAM_SWITCH, INPUT_PULLDOWN);
 
   setTemperature(TEMPERATURE);
+  setPidTunings(PID_P, 0, 0);
 
 #ifdef PID_TEMPERATURE_AUTOTUNE
   tuner.setTargetInputValue(temperatureSet);
@@ -243,10 +254,6 @@ void setup()
   tuner.setOutputRange(0, 100);
   tuner.setZNMode(PIDAutotuner::ZNModeLessOvershoot);
 #endif
-
-  temperaturePid.SetOutputLimits(0, PID_MAX_OUTPUT);
-  temperaturePid.SetSampleTime(HEAT_CYCLE_LENGTH);
-  temperaturePid.SetMode(AUTOMATIC);
 
 	heatingTimer = timerBegin(1, 80, true);
 	timerAttachInterrupt(heatingTimer, &switchOffHeating, true);
@@ -395,7 +402,7 @@ void loop()
       infusionTuner.startTuningLoop(micros());
 #endif
 
-      temperaturePid.SetTunings(PID_P_INFUSE, PID_I_INFUSE, PID_D_INFUSE);
+      setPidTunings(PID_P_INFUSE, PID_I_INFUSE, PID_D_INFUSE);
       digitalWrite(PIN_VALVE, HIGH);
       valveDeadline = 0;
 
@@ -406,7 +413,7 @@ void loop()
     else
     {
       setTemperature(TEMPERATURE);
-      temperaturePid.SetTunings(PID_P, 0, 0);
+      setPidTunings(PID_P, 0, 0);
       temperatureArrival = false;
 
       dimmerSetLevel(0);
@@ -431,7 +438,7 @@ void loop()
 #endif
 
       setTemperature(STEAM_TEMPERATURE);
-      temperaturePid.SetTunings(PID_P_STEAM, PID_I_STEAM, PID_D_STEAM);
+      setPidTunings(PID_P_STEAM, PID_I_STEAM, PID_D_STEAM);
       digitalWrite(PIN_VALVE, HIGH);
       valveDeadline = 0;
 
@@ -441,7 +448,7 @@ void loop()
     {
       setTemperature(TEMPERATURE);
       dimmerSetLevel(0);
-      temperaturePid.SetTunings(PID_P, 0, 0);
+      setPidTunings(PID_P, 0, 0);
       temperatureArrival = false;
       digitalWrite(PIN_VALVE, LOW);
 
@@ -493,6 +500,11 @@ void loop()
 #else
       temperaturePid.Compute();
 #endif
+      if (steam && temperatureIs < STEAM_TEMPERATURE - STEAM_WATER_SUPPLY_THRESHOLD_TEMPERATURE)
+      {
+        pidOut = PID_MAX_OUTPUT;
+      }
+
       if (pidOut > 0) 
       {
         heat(pidOut / PID_MAX_OUTPUT * HEAT_CYCLE_LENGTH);
@@ -509,7 +521,8 @@ void loop()
       {
         temperatureArrival = arrival;
         lastTemperatureArrivalChange = windowStart;
-        temperaturePid.SetTunings(PID_P, arrival ? PID_I : 0, arrival ? PID_D : 0);
+        pidOut = temperatureIs = 0;
+        setPidTunings(PID_P, arrival ? PID_I : 0, arrival ? PID_D : 0);
       } 
     }
 
