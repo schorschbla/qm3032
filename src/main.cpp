@@ -14,71 +14,23 @@
 #include "gauge.h"
 #include "gradient.h"
 #include "dimmer.h"
-
-
-// WARMUP Kp = 0.548229; Ki = 0.003539; Kd = 56.049820
-
-/*
-#define PID_P_WARMUP                      0.55
-#define PID_I_WARMUP                      0
-#define PID_D_WARMUP                      56
-*/
-
-
-/*
-#define PID_P                             2.6
-#define PID_I                             0.1
-#define PID_D                             0
-*/
-
-#define PID_P                             2.6
-#define PID_I                             0.05
-//#define PID_I                             0
-#define PID_D                             30
+#include "config.h"
 
 #define PID_MAX_OUTPUT                    100.0
-
-#define TEMPERATURE_SAFETY_GUARD                    125
-
-#define STEAM_TEMPERATURE                           120
-#define STEAM_WATER_SUPPLY_THRESHOLD_TEMPERATURE    7
-
-#define TEMPERATURE                       92.0
-#define TEMPERATURE_ARRIVAL_THRESHOLD     4
-#define TEMPERATURE_ARRIVAL_MINIMUM_TIME_BETWEEN_CHANGES     5000
-
-// P: 5.269382 I: 0.394954 D: 17.575706
-// P: 9.693529 I: 0.208090 D: 112.889206
-// P: 12.668172 I: 0.274426 D: 146.198624
-
-#define PID_P_INFUSE                      30
-#define PID_I_INFUSE                      0.2
-#define PID_D_INFUSE                      130
-
-#define PID_P_STEAM                       13.5
-#define PID_I_STEAM                       0.31
-#define PID_D_STEAM                       145
-
-#define PUMP_RAMPUP_TIME                  7000
-#define PUMP_MIN_POWER                    150
 
 #define XDB401_MAX_BAR                    20
 #define XDB401_READ_INTERVAL_CYCLES       1
 
 #define CYCLE_LENGTH                      40
+
 #define MAX31856_READ_INTERVAL_CYCLES     2
 #define TEMPERATURE_PID_CYCLE_FACTOR      6
-
-#define STEAM_CYCLE                       32
-#define STEAM_OFF                         2
 
 #define FLOW_CYCLES                       5
 #define FLOW_ML_PER_TICK                  0.05
 
-#define SPLASH_IMAGE_DURATION             10000
-
-#define MAX31865_RREF      430.0
-#define MAX31865_RNOMINAL  100.0
+#define MAX31865_RREF                     430.0
+#define MAX31865_RNOMINAL                 100.0
 
 #define HEAT_CYCLE_LENGTH (MAX31856_READ_INTERVAL_CYCLES * TEMPERATURE_PID_CYCLE_FACTOR * CYCLE_LENGTH)
 
@@ -244,6 +196,7 @@ void setup()
   tuner.setZNMode(PIDAutotuner::ZNModeLessOvershoot);
 #endif
 
+  temperaturePid = PID(&temperatureIs, &pidOut, &temperatureSet, PID_P, 0, 0, DIRECT);
   temperaturePid.SetOutputLimits(0, PID_MAX_OUTPUT);
   temperaturePid.SetSampleTime(HEAT_CYCLE_LENGTH);
   temperaturePid.SetMode(AUTOMATIC);
