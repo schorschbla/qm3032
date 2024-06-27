@@ -43,7 +43,7 @@
 #define STEAM_TEMPERATURE                           120
 #define STEAM_WATER_SUPPLY_THRESHOLD_TEMPERATURE    7
 
-#define TEMPERATURE                       89.0
+#define TEMPERATURE                       88.0
 #define TEMPERATURE_ARRIVAL_THRESHOLD     4
 #define TEMPERATURE_ARRIVAL_MINIMUM_TIME_BETWEEN_CHANGES     5000
 
@@ -458,7 +458,7 @@ void loop()
 
   if (infusing)
   {
-      unsigned char pumpValue = PUMP_MIN_POWER + min(1.0, (windowStart - infuseStart) / (double)PUMP_RAMPUP_TIME) * 60;
+      unsigned char pumpValue = PUMP_MIN_POWER + min(1.0, (windowStart - infuseStart) / (double)PUMP_RAMPUP_TIME) * 50;
       dimmerSetLevel(pumpValue);
   }
   else if (steam)
