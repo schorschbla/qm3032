@@ -412,8 +412,16 @@ void loop()
       digitalWrite(PIN_VALVE, HIGH);
       valveDeadline = 0;
 
-      infuseStart = windowStart;
-      flowCounterInfusionStart = flowCounter;
+      // Skip prefusion if infusion is turned on repeatedly 
+      if (infuseStart > windowStart - 2000)
+      {
+        infuseStart = windowStart - PREINFUSION_SOAK_TIME;
+      }
+      else
+      {
+        infuseStart = windowStart;
+        flowCounterInfusionStart = flowCounter;
+      }
 
       initUiInfuse(tft);
    }
