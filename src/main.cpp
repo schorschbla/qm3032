@@ -38,14 +38,18 @@
 
 #define PID_MAX_OUTPUT                    100.0
 
-#define TEMPERATURE_SAFETY_GUARD                    125
+#define TEMPERATURE_SAFETY_GUARD                    130
 
-#define STEAM_TEMPERATURE                           120
-#define STEAM_WATER_SUPPLY_THRESHOLD_TEMPERATURE    7
+#define STEAM_TEMPERATURE                           125
+#define STEAM_WATER_SUPPLY_THRESHOLD_TEMPERATURE    10
 
-#define TEMPERATURE                       88.0
+#define TEMPERATURE                       89
 #define TEMPERATURE_ARRIVAL_THRESHOLD     4
 #define TEMPERATURE_ARRIVAL_MINIMUM_TIME_BETWEEN_CHANGES     5000
+
+
+#define PREINFUSION_VOLUME_ML  3.0
+#define PREINFUSION_SOAK_TIME 12000
 
 // P: 5.269382 I: 0.394954 D: 17.575706
 // P: 9.693529 I: 0.208090 D: 112.889206
@@ -296,6 +300,8 @@ unsigned int splashCurrent = 0;
 bool temperatureArrival = false;
 unsigned int lastTemperatureArrivalChange = 0;
 
+unsigned int flowCounterInfusionStart;
+
 void updateUiTemperature()
 {
   float temperatureAvgDegree = temperateAvg.get();
@@ -407,6 +413,7 @@ void loop()
       valveDeadline = 0;
 
       infuseStart = windowStart;
+      flowCounterInfusionStart = flowCounter;
 
       initUiInfuse(tft);
    }
@@ -458,7 +465,21 @@ void loop()
 
   if (infusing)
   {
-      unsigned char pumpValue = PUMP_MIN_POWER + min(1.0, (windowStart - infuseStart) / (double)PUMP_RAMPUP_TIME) * 50;
+      unsigned char pumpValue;
+      unsigned int infusionTime = windowStart - infuseStart;
+      float infusionVolume = (flowCounter - flowCounterInfusionStart) * FLOW_ML_PER_TICK;
+      if (infusionTime < PREINFUSION_SOAK_TIME)
+      {
+        pumpValue = infusionVolume < PREINFUSION_VOLUME_ML ? PUMP_MIN_POWER : 0;
+      }
+      else
+      {
+        pumpValue = PUMP_MIN_POWER + min(1.0, (infusionTime - PREINFUSION_SOAK_TIME) / (double)PUMP_RAMPUP_TIME) * 60;
+      }
+
+      if (cycle % 10 == 0)
+        Serial.printf("infusion volume: %f\n", infusionVolume);
+
       dimmerSetLevel(pumpValue);
   }
   else if (steam)
