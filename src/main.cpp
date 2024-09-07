@@ -1,7 +1,6 @@
 #include <Arduino.h>
 #include <math.h>
 #include <Wire.h>
-#include <TFT_eSPI.h>
 #include <Adafruit_MAX31865.h>
 #include <DataTome.h>
 #include <FS.h>
@@ -11,29 +10,12 @@
 
 #include <vector>
 
-#include "gauge.h"
 #include "gradient.h"
 #include "dimmer.h"
-
-
-// WARMUP Kp = 0.548229; Ki = 0.003539; Kd = 56.049820
-
-/*
-#define PID_P_WARMUP                      0.55
-#define PID_I_WARMUP                      0
-#define PID_D_WARMUP                      56
-*/
-
-
-/*
-#define PID_P                             2.6
-#define PID_I                             0.1
-#define PID_D                             0
-*/
+#include "display.h"
 
 #define PID_P                             2.6
 #define PID_I                             0.05
-//#define PID_I                             0
 #define PID_D                             30
 
 #define PID_MAX_OUTPUT                    100.0
@@ -50,10 +32,6 @@
 
 #define PREINFUSION_VOLUME_ML  5.0
 #define PREINFUSION_SOAK_TIME 8000
-
-// P: 5.269382 I: 0.394954 D: 17.575706
-// P: 9.693529 I: 0.208090 D: 112.889206
-// P: 12.668172 I: 0.274426 D: 146.198624
 
 #define PID_P_INFUSE                      50
 #define PID_I_INFUSE                      0.2
@@ -92,7 +70,7 @@ static float temperatureHeatWeights[] = { 5.0f, 85.0f, 10.0f, 2.0f, 3.0f };
 
 int ReadXdb401PressureValue(int *result);
 
-TFT_eSPI tft = TFT_eSPI();
+Display display;
 
 SPIClass hspi(HSPI);
 Adafruit_MAX31865 thermo(PIN_MAX31865_SELECT, &hspi);
@@ -110,9 +88,6 @@ PID temperaturePid(&temperatureIs, &pidOut, &temperatureSet, PID_P, 0, 0, DIRECT
 PIDAutotuner steamTuner = PIDAutotuner();
 
 PIDAutotuner infusionTuner = PIDAutotuner();
-
-Gauge mainDial(120, 120, 100, 16, TFT_BLACK);
-Gauge temperatureOffsetDial(120, 120, 100, 16, TFT_BLACK);
 
 Gradient tempGradient(heatGradient, temperatureHeatWeights, 6);
 Gradient pressureGradient(heatGradient, pressureHeatWeights, 6);
@@ -160,62 +135,6 @@ void IRAM_ATTR incrementFlowCounter() {
     flowCounter++;
 }
 
-void initUiStandby(TFT_eSPI &tft)
-{
-  tft.fillScreen(TFT_BLACK);
-
-  tft.setTextPadding(0);
-  tft.setTextDatum(0);
-  tft.loadFont("NotoSansBold15");
-
-  GaugeScale pressureScale(120,120, 93, 1, 70, 220, 4, TFT_DARKGREY, TFT_BLACK);
-  pressureScale.draw(tft, 5);
-  pressureScale.drawLabel(tft, 0, "0", 2, -14);
-  pressureScale.drawLabel(tft, 1, "30", 2, 2);
-  pressureScale.drawLabel(tft, 2, "60", -8, 3);
-  pressureScale.drawLabel(tft, 3, "90", -18);
-  pressureScale.drawLabel(tft, 4, "120", -27, -14);
-
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.drawString("°C", 120 + 33, 85);
-
-  tft.loadFont("NotoSansBold36");
-}
-
-void initUiInfuse(TFT_eSPI &tft)
-{
-  tft.fillScreen(TFT_BLACK);
-
-  tft.setTextPadding(0);
-  tft.setTextDatum(0);
-  tft.loadFont("NotoSansBold15");
-
-  GaugeScale pressureScale(120,120, 93, 1, 70, 220, 4, TFT_DARKGREY, TFT_BLACK);
-  pressureScale.draw(tft, 5);
-  pressureScale.drawLabel(tft, 0, "0", 2, -14);
-  pressureScale.drawLabel(tft, 1, "4", 2);
-  pressureScale.drawLabel(tft, 2, "8", -4, 2);
-  pressureScale.drawLabel(tft, 3, "12", -18);
-  pressureScale.drawLabel(tft, 4, "16", -18, -14);
-
-  GaugeScale tempOffsetScale(120, 120, 93, 1, -50, 100, 2, TFT_DARKGREY, TFT_BLACK);
-  tempOffsetScale.draw(tft, 5);
-  tempOffsetScale.drawLabel(tft, 0, "+5", -24, -6);
-  tempOffsetScale.drawLabel(tft, 1, "0", 0, -15);
-  tempOffsetScale.drawLabel(tft, 1, "+", -9, -16);
-  tempOffsetScale.drawLabel(tft, 1, "_", -8, -18);
-  tempOffsetScale.drawLabel(tft, 2, "-5", 8, -6);
-
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.drawString("bar", 120 - 14, 85);
-  tft.drawString("°C", 120 - 8, 120 + 23);
-  tft.drawString("ml", 120 + 33, 106);
-  tft.drawLine(120 + 36, 122, 120 + 37 + 12, 122, TFT_WHITE);
-  tft.drawString("s", 120 + 39, 124);
-
-  tft.loadFont("NotoSansBold36");
-}
-
 void setPidTunings(double Kp, double Ki, double Kd)
 {
   pidOut = 0;
@@ -225,6 +144,39 @@ void setPidTunings(double Kp, double Ki, double Kd)
   temperaturePid.SetSampleTime(HEAT_CYCLE_LENGTH);
   temperaturePid.SetMode(AUTOMATIC);
 }
+
+lv_obj_t *standbyScreen;
+lv_obj_t *standbyTemperatureArc;
+lv_obj_t *standbyTemperatureLabel;
+
+void initStandbyUi()
+{
+  standbyScreen = lv_obj_create(NULL);
+  standbyTemperatureArc = lv_arc_create(standbyScreen);
+  lv_obj_set_size(standbyTemperatureArc, 220, 220);
+  lv_obj_set_style_arc_width(standbyTemperatureArc, 16, LV_PART_MAIN);
+  lv_obj_set_style_arc_width(standbyTemperatureArc, 16, LV_PART_INDICATOR);
+  lv_arc_set_rotation(standbyTemperatureArc, 135);
+  lv_arc_set_bg_angles(standbyTemperatureArc, 0, 270);
+  lv_obj_remove_style(standbyTemperatureArc, NULL, LV_PART_KNOB);
+  lv_obj_center(standbyTemperatureArc);
+
+  standbyTemperatureLabel = lv_label_create(standbyScreen);
+  lv_obj_set_style_text_font(standbyTemperatureLabel, &lv_font_montserrat_48, 0);
+  lv_obj_set_width(standbyTemperatureLabel, 150);
+  lv_obj_set_style_text_align(standbyTemperatureLabel, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_align(standbyTemperatureLabel, LV_ALIGN_CENTER, 0, 0);
+}
+
+void lvglUpdateTaskFunc(void * parameter) {
+  for (;;)
+  {
+    vTaskSuspend(NULL);
+    lv_timer_handler(); 
+  }
+}
+
+TaskHandle_t lvglUpdateTask;
 
 void setup()
 {
@@ -262,10 +214,11 @@ void setup()
 	heatingTimer = timerBegin(1, 80, true);
 	timerAttachInterrupt(heatingTimer, &switchOffHeating, true);
 
-  tft.init();
-  tft.setRotation(1);
-
-  initUiStandby(tft);
+  display.init();
+  lv_init();
+  lv_disp_drv_register(&display.lvglDriver());
+  initStandbyUi();
+  lv_scr_load(standbyScreen);
 
   dimmerBegin(0);
 
@@ -274,6 +227,11 @@ void setup()
 #ifdef PID_TEMPERATURE_AUTOTUNE
   tuner.startTuningLoop(micros());
 #endif
+
+  xTaskCreatePinnedToCore(lvglUpdateTaskFunc, "lvglUpdateTask", 10000, NULL, 1, &lvglUpdateTask, 0);
+
+  //lv_label_set_text_fmt(standbyTemperatureLabel, "%.1f°", 22.5);
+  //vTaskResume(lvglUpdateTask);
 }
 
 void heat(unsigned int durationMillis)
@@ -302,7 +260,8 @@ unsigned int lastTemperatureArrivalChange = 0;
 
 unsigned int flowCounterInfusionStart;
 
-void updateUiTemperature()
+
+void updateUi()
 {
   float temperatureAvgDegree = temperateAvg.get();
 
@@ -334,7 +293,7 @@ void updateUiTemperature()
         tempOffsetDialAmount = 10;
       }
     }
-
+/*
     temperatureOffsetDial.setValue(tempOffsetDialStart, tempOffsetDialAmount);
     temperatureOffsetDial.setColor(tft.color24to16(tempGradient.getRgb(temperatureAvgDegree)));
     temperatureOffsetDial.draw(tft);
@@ -347,21 +306,17 @@ void updateUiTemperature()
       int sanitizedTemp = (int) temperatureAvgDegree;
       tft.drawFloat(temperatureAvgDegree, temperatureAvgDegree > 99.9 ? 0 : 1, 120, 159);    
     }
+*/
   }
   else
   {
-    mainDial.setValue(70, min(220, (int)(220 * temperatureAvgDegree / 120.0)));
-    mainDial.setColor(tft.color24to16(tempGradient.getRgb(temperatureAvgDegree)));
-    mainDial.draw(tft);  
-
-    tft.setTextDatum(TC_DATUM);
-    int padding = tft.textWidth("00.0");
-    tft.setTextPadding(padding);
-    int sanitizedTemp = (int) temperatureAvgDegree;
-    tft.drawFloat(temperatureAvgDegree, temperatureAvgDegree > 99.9 ? 0 : 1, 120 - 8, 70);      
+    lv_label_set_text_fmt(standbyTemperatureLabel, "%.1f°", temperatureAvgDegree);
+    lv_arc_set_angles(standbyTemperatureArc, 0, temperatureAvgDegree / TEMPERATURE_SAFETY_GUARD * 220);
+    lv_obj_set_style_arc_color(standbyTemperatureArc, lv_color_hex(tempGradient.getRgb(temperatureAvgDegree)), LV_PART_INDICATOR | LV_STATE_DEFAULT );
   }
 }
 
+/*
 void updateUiPressure()
 {
   if (infusing || steam)
@@ -389,6 +344,7 @@ void updateUiFlow()
       tft.drawFloat(flowAvg.get(), 1, 120, 105);
   }
 }
+*/
 
 void loop()
 {
@@ -423,7 +379,7 @@ void loop()
         flowCounterInfusionStart = flowCounter;
       }
 
-      initUiInfuse(tft);
+      //initUiInfuse(tft);
    }
     else
     {
@@ -434,7 +390,7 @@ void loop()
       dimmerSetLevel(0);
       valveDeadline = windowStart + 2000;
 
-      initUiStandby(tft);
+      //initUiStandby(tft);
     }
   }
 
@@ -457,7 +413,7 @@ void loop()
       digitalWrite(PIN_VALVE, HIGH);
       valveDeadline = 0;
 
-      initUiInfuse(tft);
+      //initUiInfuse(tft);
     }
     else
     {
@@ -467,7 +423,7 @@ void loop()
       temperatureArrival = false;
       digitalWrite(PIN_VALVE, LOW);
 
-      initUiStandby(tft);
+      //initUiStandby(tft);
     }
   }
 
@@ -554,8 +510,6 @@ void loop()
         setPidTunings(PID_P, arrival ? PID_I : 0, arrival ? PID_D : 0);
       } 
     }
-
-    updateUiTemperature();
   }
 
   if (cycle % XDB401_READ_INTERVAL_CYCLES == 0)
@@ -565,7 +519,6 @@ void loop()
     {
         float pressure = (short)(pressureSample / 256) / float(SHRT_MAX) * XDB401_MAX_BAR;
         pressureAvg.push(pressure);
-        updateUiPressure();
     }
   }
 
@@ -574,10 +527,10 @@ void loop()
     unsigned int currentFlowCounter = flowCounter;
     float flow = (currentFlowCounter - lastFlowCounter) * FLOW_ML_PER_TICK / (FLOW_CYCLES * CYCLE_LENGTH / 1000.0);
     flowAvg.push(flow);
-    updateUiFlow();
     lastFlowCounter = currentFlowCounter;
   }
 
+/*
   if (!infusing && !steam && !splashFiles.empty())
   {
     int splashCycle = cycle % (SPLASH_IMAGE_DURATION / CYCLE_LENGTH);
@@ -592,8 +545,16 @@ void loop()
         tft.pushImage(56, 110 + splashCycle * 16, 128, 16, (uint16_t *)splashBuf);
     }
   }
+*/
+
+  if (eTaskGetState(lvglUpdateTask) == eTaskState::eSuspended)
+  {
+    updateUi();
+    vTaskResume(lvglUpdateTask);
+  }
 
   unsigned int elapsed = millis() - windowStart;
+  Serial.printf("elapsed: %d\n", elapsed);
   if (elapsed < CYCLE_LENGTH)
   {
     delay(CYCLE_LENGTH - elapsed);
