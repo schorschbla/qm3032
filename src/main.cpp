@@ -25,7 +25,7 @@
 #define STEAM_TEMPERATURE                           125
 #define STEAM_WATER_SUPPLY_THRESHOLD_TEMPERATURE    10
 
-#define TEMPERATURE                       93
+#define TEMPERATURE                       89
 #define TEMPERATURE_ARRIVAL_THRESHOLD     4
 #define TEMPERATURE_ARRIVAL_MINIMUM_TIME_BETWEEN_CHANGES     5000
 
@@ -149,6 +149,13 @@ lv_obj_t *standbyScreen;
 lv_obj_t *standbyTemperatureArc;
 lv_obj_t *standbyTemperatureLabel;
 
+
+lv_obj_t *infuseScreen;
+lv_obj_t *infusePressureArc;
+lv_obj_t *infusePressureLabel;
+lv_obj_t *infuseTemperatureDiffArc;
+lv_obj_t *infuseTemperatureLabel;
+
 void initStandbyUi()
 {
   standbyScreen = lv_obj_create(NULL);
@@ -156,8 +163,8 @@ void initStandbyUi()
   lv_obj_set_size(standbyTemperatureArc, 220, 220);
   lv_obj_set_style_arc_width(standbyTemperatureArc, 16, LV_PART_MAIN);
   lv_obj_set_style_arc_width(standbyTemperatureArc, 16, LV_PART_INDICATOR);
-  lv_arc_set_rotation(standbyTemperatureArc, 135);
-  lv_arc_set_bg_angles(standbyTemperatureArc, 0, 270);
+  lv_arc_set_rotation(standbyTemperatureArc, 145);
+  lv_arc_set_bg_angles(standbyTemperatureArc, 0, 250);
   lv_obj_remove_style(standbyTemperatureArc, NULL, LV_PART_KNOB);
   lv_obj_center(standbyTemperatureArc);
 
@@ -166,6 +173,41 @@ void initStandbyUi()
   lv_obj_set_width(standbyTemperatureLabel, 150);
   lv_obj_set_style_text_align(standbyTemperatureLabel, LV_TEXT_ALIGN_CENTER, 0);
   lv_obj_align(standbyTemperatureLabel, LV_ALIGN_CENTER, 0, 0);
+}
+
+void initInfuseUi()
+{
+  infuseScreen = lv_obj_create(NULL);
+
+  infusePressureArc = lv_arc_create(infuseScreen);
+  lv_obj_set_size(infusePressureArc, 220, 220);
+  lv_obj_set_style_arc_width(infusePressureArc, 16, LV_PART_MAIN);
+  lv_obj_set_style_arc_width(infusePressureArc, 16, LV_PART_INDICATOR);
+  lv_arc_set_rotation(infusePressureArc, 145);
+  lv_arc_set_bg_angles(infusePressureArc, 0, 250);
+  lv_obj_remove_style(infusePressureArc, NULL, LV_PART_KNOB);
+  lv_obj_center(infusePressureArc);
+
+  infuseTemperatureDiffArc = lv_arc_create(infuseScreen);
+  lv_obj_set_size(infuseTemperatureDiffArc, 220, 220);
+  lv_obj_set_style_arc_width(infuseTemperatureDiffArc, 16, LV_PART_MAIN);
+  lv_obj_set_style_arc_width(infuseTemperatureDiffArc, 16, LV_PART_INDICATOR);
+  lv_arc_set_rotation(infuseTemperatureDiffArc, 50);
+  lv_arc_set_bg_angles(infuseTemperatureDiffArc, 0, 80);
+  lv_obj_remove_style(infuseTemperatureDiffArc, NULL, LV_PART_KNOB);
+  lv_obj_center(infuseTemperatureDiffArc);
+
+  infusePressureLabel = lv_label_create(infuseScreen);
+  lv_obj_set_style_text_font(infusePressureLabel, &lv_font_montserrat_48, 0);
+  lv_obj_set_width(infusePressureLabel, 150);
+  lv_obj_set_style_text_align(infusePressureLabel, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_align(infusePressureLabel, LV_ALIGN_CENTER, 0, -50);
+
+  infuseTemperatureLabel = lv_label_create(infuseScreen);
+  lv_obj_set_style_text_font(infuseTemperatureLabel, &lv_font_montserrat_48, 0);
+  lv_obj_set_width(infuseTemperatureLabel, 150);
+  lv_obj_set_style_text_align(infuseTemperatureLabel, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_align(infuseTemperatureLabel, LV_ALIGN_CENTER, 0, 20);
 }
 
 void lvglUpdateTaskFunc(void * parameter) {
@@ -215,9 +257,11 @@ void setup()
 	timerAttachInterrupt(heatingTimer, &switchOffHeating, true);
 
   display.init();
+  display.setRotation(1);
   lv_init();
   lv_disp_drv_register(&display.lvglDriver());
   initStandbyUi();
+  initInfuseUi();
   lv_scr_load(standbyScreen);
 
   dimmerBegin(0);
@@ -270,29 +314,38 @@ void updateUi()
     int tempOffsetDialStart;
     int tempOffsetDialAmount;
 
-    int tempOffset = (temperatureSet - temperatureAvgDegree) / 5.0 * 50;
-    if (tempOffset < 0) 
+    float tempDiff = min(1.0, max(-1.0, (temperatureAvgDegree - temperatureSet) / 5.0));
+
+    float displayedPressure = max(0.0f, pressureAvg.get());
+
+    if (lv_scr_act() != infuseScreen)
     {
-      tempOffset = max(-50, tempOffset);
-      tempOffsetDialStart = 360 + tempOffset;
-      tempOffsetDialAmount = -tempOffset;
-      if (tempOffsetDialAmount < 10) 
-      {
-        tempOffsetDialStart -= (10 - tempOffsetDialAmount) / 2;
-        tempOffsetDialAmount = 10;
-      }
-    } 
-    else 
-    {
-      tempOffset = min(50, tempOffset);
-      tempOffsetDialStart = 0;
-      tempOffsetDialAmount = tempOffset;
-      if (tempOffsetDialAmount < 10) 
-      {
-        tempOffsetDialStart = 360 - (10 - tempOffsetDialAmount) / 2;
-        tempOffsetDialAmount = 10;
-      }
+      lv_scr_load(infuseScreen);
     }
+
+    lv_label_set_text_fmt(infuseTemperatureLabel, "%.1f°", temperatureAvgDegree);
+
+    uint16_t angleStart, angleEnd;
+    Serial.printf("tempdiff: %f\n", tempDiff);
+    if (tempDiff < 0)
+    {
+      angleStart = 40;
+      angleEnd = 40 - tempDiff * 40;
+    }
+    else
+    {
+      angleStart = (1 - tempDiff) * 40;
+      angleEnd = 40;
+    }
+
+    lv_arc_set_angles(infuseTemperatureDiffArc, angleStart, angleEnd);
+    lv_obj_set_style_arc_color(infuseTemperatureDiffArc, lv_color_hex(tempGradient.getRgb(temperatureAvgDegree)), LV_PART_INDICATOR | LV_STATE_DEFAULT );
+
+    lv_label_set_text_fmt(infusePressureLabel, "%.1f", displayedPressure);
+    lv_arc_set_angles(infusePressureArc, 0, displayedPressure / 16.0 * 250);
+    lv_obj_set_style_arc_color(infusePressureArc, lv_color_hex(pressureGradient.getRgb(displayedPressure)), LV_PART_INDICATOR | LV_STATE_DEFAULT );
+
+
 /*
     temperatureOffsetDial.setValue(tempOffsetDialStart, tempOffsetDialAmount);
     temperatureOffsetDial.setColor(tft.color24to16(tempGradient.getRgb(temperatureAvgDegree)));
@@ -310,8 +363,15 @@ void updateUi()
   }
   else
   {
+    if (lv_scr_act() != standbyScreen)
+    {
+      lv_scr_load(standbyScreen);
+    }
+
+    lv_arc_set_angles(standbyTemperatureArc, 0, temperatureAvgDegree / TEMPERATURE_SAFETY_GUARD * 250);
+
     lv_label_set_text_fmt(standbyTemperatureLabel, "%.1f°", temperatureAvgDegree);
-    lv_arc_set_angles(standbyTemperatureArc, 0, temperatureAvgDegree / TEMPERATURE_SAFETY_GUARD * 220);
+    lv_arc_set_angles(standbyTemperatureArc, 0, temperatureAvgDegree / TEMPERATURE_SAFETY_GUARD * 250);
     lv_obj_set_style_arc_color(standbyTemperatureArc, lv_color_hex(tempGradient.getRgb(temperatureAvgDegree)), LV_PART_INDICATOR | LV_STATE_DEFAULT );
   }
 }
@@ -438,7 +498,7 @@ void loop()
       }
       else
       {
-        pumpValue = PUMP_MIN_POWER + min(1.0, (infusionTime - PREINFUSION_SOAK_TIME) / (double)PUMP_RAMPUP_TIME) * 60;
+        pumpValue = PUMP_MIN_POWER + min(1.0, (infusionTime - PREINFUSION_SOAK_TIME) / (double)PUMP_RAMPUP_TIME) * 50;
       }
 
       if (cycle % 10 == 0)
@@ -554,7 +614,6 @@ void loop()
   }
 
   unsigned int elapsed = millis() - windowStart;
-  Serial.printf("elapsed: %d\n", elapsed);
   if (elapsed < CYCLE_LENGTH)
   {
     delay(CYCLE_LENGTH - elapsed);
