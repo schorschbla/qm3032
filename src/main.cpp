@@ -98,10 +98,12 @@ std::vector<fs::File> splashFiles;
 
 void getSplashImages()
 {
+  Serial.printf("getsplash\n");
   fs::File root = SPIFFS.open("/"); 
 
   while (fs::File file = root.openNextFile()) 
   {
+    Serial.printf("File: %s\n", file.name());
       if (!strncmp(file.name(), "splash-", 7))
       {
         splashFiles.push_back(file);
@@ -160,7 +162,7 @@ void initStandbyUi()
 {
   standbyScreen = lv_obj_create(NULL);
   standbyTemperatureArc = lv_arc_create(standbyScreen);
-  lv_obj_set_size(standbyTemperatureArc, 220, 220);
+  lv_obj_set_size(standbyTemperatureArc, 236, 236);
   lv_obj_set_style_arc_width(standbyTemperatureArc, 16, LV_PART_MAIN);
   lv_obj_set_style_arc_width(standbyTemperatureArc, 16, LV_PART_INDICATOR);
   lv_arc_set_rotation(standbyTemperatureArc, 145);
@@ -172,7 +174,7 @@ void initStandbyUi()
   lv_obj_set_style_text_font(standbyTemperatureLabel, &lv_font_montserrat_48, 0);
   lv_obj_set_width(standbyTemperatureLabel, 150);
   lv_obj_set_style_text_align(standbyTemperatureLabel, LV_TEXT_ALIGN_CENTER, 0);
-  lv_obj_align(standbyTemperatureLabel, LV_ALIGN_CENTER, 0, 0);
+  lv_obj_align(standbyTemperatureLabel, LV_ALIGN_CENTER, 0, -40);
 }
 
 void initInfuseUi()
@@ -180,7 +182,7 @@ void initInfuseUi()
   infuseScreen = lv_obj_create(NULL);
 
   infusePressureArc = lv_arc_create(infuseScreen);
-  lv_obj_set_size(infusePressureArc, 220, 220);
+  lv_obj_set_size(infusePressureArc, 236, 236);
   lv_obj_set_style_arc_width(infusePressureArc, 16, LV_PART_MAIN);
   lv_obj_set_style_arc_width(infusePressureArc, 16, LV_PART_INDICATOR);
   lv_arc_set_rotation(infusePressureArc, 145);
@@ -189,7 +191,7 @@ void initInfuseUi()
   lv_obj_center(infusePressureArc);
 
   infuseTemperatureDiffArc = lv_arc_create(infuseScreen);
-  lv_obj_set_size(infuseTemperatureDiffArc, 220, 220);
+  lv_obj_set_size(infuseTemperatureDiffArc, 236, 236);
   lv_obj_set_style_arc_width(infuseTemperatureDiffArc, 16, LV_PART_MAIN);
   lv_obj_set_style_arc_width(infuseTemperatureDiffArc, 16, LV_PART_INDICATOR);
   lv_arc_set_rotation(infuseTemperatureDiffArc, 50);
@@ -210,15 +212,43 @@ void initInfuseUi()
   lv_obj_align(infuseTemperatureLabel, LV_ALIGN_CENTER, 0, 20);
 }
 
-void lvglUpdateTaskFunc(void * parameter) {
+bool infusing = false;
+bool steam = false;
+
+uint32_t lastSplashDisplayTime = 0;
+uint32_t currentSplash = 0;
+
+void lvglUpdateTaskFunc(void *parameter)
+{
   for (;;)
   {
     vTaskSuspend(NULL);
-    lv_timer_handler(); 
+    unsigned long start = millis();
+    lv_timer_handler();
+    //Serial.printf("Update duration: %d\n", millis() - start);
+
+    if (!infusing && !steam && !splashFiles.empty())
+    {
+      unsigned long now = millis();
+      if (lastSplashDisplayTime == 0 || now > lastSplashDisplayTime + SPLASH_IMAGE_DURATION)
+      {
+        currentSplash = (currentSplash + 1) % splashFiles.size();
+        Serial.printf("Current splash: %d\n", currentSplash);
+        splashFiles[currentSplash].seek(0);
+        for (int i = 0; i < 8; ++i)
+        {
+          splashFiles[currentSplash].read(splashBuf, 4096);
+          display.pushImageDMA(56, 110 + i * 16, 128, 16, (uint16_t *)splashBuf);
+        }
+        lastSplashDisplayTime = now;
+        Serial.printf("Update duration: %d\n", millis() - start);
+      }
+    }
   }
 }
 
 TaskHandle_t lvglUpdateTask;
+
 
 void setup()
 {
@@ -229,8 +259,6 @@ void setup()
 
   Wire.begin();
 
-  SPIFFS.begin();
-  
   hspi.begin(PIN_MAX31865_CLOCK, PIN_MAX31865_MISO, PIN_MAX31865_MOSI);
   
   thermo.begin(MAX31865_3WIRE);
@@ -266,6 +294,7 @@ void setup()
 
   dimmerBegin(0);
 
+  SPIFFS.begin();
   getSplashImages();
 
 #ifdef PID_TEMPERATURE_AUTOTUNE
@@ -273,9 +302,6 @@ void setup()
 #endif
 
   xTaskCreatePinnedToCore(lvglUpdateTaskFunc, "lvglUpdateTask", 10000, NULL, 1, &lvglUpdateTask, 0);
-
-  //lv_label_set_text_fmt(standbyTemperatureLabel, "%.1f°", 22.5);
-  //vTaskResume(lvglUpdateTask);
 }
 
 void heat(unsigned int durationMillis)
@@ -291,9 +317,6 @@ void heat(unsigned int durationMillis)
 
 unsigned long cycle = 0;
 unsigned long valveDeadline;
-
-bool infusing = false;
-bool steam = false;
 
 unsigned long infuseStart;
 
@@ -323,10 +346,17 @@ void updateUi()
       lv_scr_load(infuseScreen);
     }
 
-    lv_label_set_text_fmt(infuseTemperatureLabel, "%.1f°", temperatureAvgDegree);
+    int temperatureAvgDegreeInt = (int) temperatureAvgDegree;
+    if (temperatureAvgDegreeInt < 100)
+    {
+      lv_label_set_text_fmt(infuseTemperatureLabel, "%.1f°", temperatureAvgDegree);
+    }
+    else
+    {
+      lv_label_set_text_fmt(infuseTemperatureLabel, "%d°", temperatureAvgDegreeInt);
+    }
 
     uint16_t angleStart, angleEnd;
-    Serial.printf("tempdiff: %f\n", tempDiff);
     if (tempDiff < 0)
     {
       angleStart = 40;
@@ -337,7 +367,11 @@ void updateUi()
       angleStart = (1 - tempDiff) * 40;
       angleEnd = 40;
     }
-
+    if (angleEnd - angleStart < 4)
+    {
+      angleStart -= (4 - (angleEnd - angleStart)) / 2;
+      angleEnd = angleStart + 4;
+    }
     lv_arc_set_angles(infuseTemperatureDiffArc, angleStart, angleEnd);
     lv_obj_set_style_arc_color(infuseTemperatureDiffArc, lv_color_hex(tempGradient.getRgb(temperatureAvgDegree)), LV_PART_INDICATOR | LV_STATE_DEFAULT );
 
@@ -370,7 +404,16 @@ void updateUi()
 
     lv_arc_set_angles(standbyTemperatureArc, 0, temperatureAvgDegree / TEMPERATURE_SAFETY_GUARD * 250);
 
-    lv_label_set_text_fmt(standbyTemperatureLabel, "%.1f°", temperatureAvgDegree);
+    int temperatureAvgDegreeInt = (int) temperatureAvgDegree;
+    if (temperatureAvgDegreeInt < 100)
+    {
+      lv_label_set_text_fmt(standbyTemperatureLabel, "%.1f°", temperatureAvgDegree);
+    }
+    else
+    {
+      lv_label_set_text_fmt(standbyTemperatureLabel, "%d°", temperatureAvgDegreeInt);
+    }
+
     lv_arc_set_angles(standbyTemperatureArc, 0, temperatureAvgDegree / TEMPERATURE_SAFETY_GUARD * 250);
     lv_obj_set_style_arc_color(standbyTemperatureArc, lv_color_hex(tempGradient.getRgb(temperatureAvgDegree)), LV_PART_INDICATOR | LV_STATE_DEFAULT );
   }
@@ -501,9 +544,6 @@ void loop()
         pumpValue = PUMP_MIN_POWER + min(1.0, (infusionTime - PREINFUSION_SOAK_TIME) / (double)PUMP_RAMPUP_TIME) * 50;
       }
 
-      if (cycle % 10 == 0)
-        Serial.printf("infusion volume: %f\n", infusionVolume);
-
       dimmerSetLevel(pumpValue);
   }
   else if (steam)
@@ -589,23 +629,6 @@ void loop()
     flowAvg.push(flow);
     lastFlowCounter = currentFlowCounter;
   }
-
-/*
-  if (!infusing && !steam && !splashFiles.empty())
-  {
-    int splashCycle = cycle % (SPLASH_IMAGE_DURATION / CYCLE_LENGTH);
-    if (splashCycle < 8)
-    {
-        if (splashCycle == 0)
-        {
-          splashCurrent = (splashCurrent + 1) % splashFiles.size();
-          splashFiles[splashCurrent].seek(0);
-        }
-        splashFiles[splashCurrent].read(splashBuf, 4096);        
-        tft.pushImage(56, 110 + splashCycle * 16, 128, 16, (uint16_t *)splashBuf);
-    }
-  }
-*/
 
   if (eTaskGetState(lvglUpdateTask) == eTaskState::eSuspended)
   {

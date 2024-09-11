@@ -34,9 +34,46 @@ lv_disp_drv_t &Display::lvglDriver()
     return disp_drv;
 }
 
+lv_area_t excluded = {
+    56,
+    112,
+    184,
+    240
+};
+
 void Display::flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p)
 {
     Display *display = static_cast<Display *>(disp->user_data);
-    display->pushImageDMA(area->x1, area->y1, area->x2 - area->x1 + 1, area->y2 - area->y1 + 1, (lgfx::rgb565_t *)&color_p->full);
+    lgfx::v1::pixelcopy_t pc = display->create_pc((lgfx::rgb565_t *)&color_p->full);
+    pc.src_bitwidth = area->x2 - area->x1 + 1;
+
+    display->startWrite();
+
+    if (area->y1 < excluded.y1)
+    {
+        display->panel.writeImage(area->x1, area->y1, area->x2 - area->x1 + 1, min(area->y2, excluded.y1) - area->y1 + 1, &pc, true);
+    }
+
+    if (area->y2 > excluded.y1 && area->y2 < excluded.y2)
+    {
+        int y = max(excluded.y1, area->y1);
+        int h = min(area->y2, excluded.y2) - y + 1;
+
+        if (area->x1 < excluded.x1)
+        {
+            pc.src_y = y - area->y1;
+            pc.src_x = 0;
+            display->panel.writeImage(area->x1, y, excluded.x1 - area->x1 + 1, h, &pc, true);
+        }
+
+        if (area->x2 > excluded.x2)
+        {
+            pc.src_y = y - area->y1;
+            pc.src_x = excluded.x2 - area->x1;
+            display->panel.writeImage(excluded.x2, y, area->x2 - excluded.x2 - 1, h, &pc, true);
+        }
+    }
+
+    display->endWrite();
     lv_disp_flush_ready(disp);
 }
