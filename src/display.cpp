@@ -39,11 +39,6 @@ void Display::flush(const lv_area_t *area, lv_color_t *color_p)
     lgfx::v1::pixelcopy_t pc = create_pc((lgfx::rgb565_t *)&color_p->full);
     pc.src_bitwidth = area->x2 - area->x1 + 1;
 
-    if (area->y1 < 10)
-    {
-        Serial.printf("%x\n", lv_color_to32(color_p[25 * pc.src_bitwidth + pc.src_bitwidth / 2]));
-    }
-
     startWrite();
 
     if ((excluded.x1 | excluded.x2 | excluded.y1 | excluded.y2) == 0)

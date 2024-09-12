@@ -14,7 +14,7 @@
 #include "dimmer.h"
 #include "display.h"
 
-#define PID_P                             2.6
+#define PID_P                             2.7
 #define PID_I                             0.05
 #define PID_D                             30
 
@@ -25,7 +25,7 @@
 #define STEAM_TEMPERATURE                           125
 #define STEAM_WATER_SUPPLY_THRESHOLD_TEMPERATURE    10
 
-#define TEMPERATURE                       89
+#define TEMPERATURE                       90
 #define TEMPERATURE_ARRIVAL_THRESHOLD     4
 #define TEMPERATURE_ARRIVAL_MINIMUM_TIME_BETWEEN_CHANGES     5000
 
@@ -98,12 +98,10 @@ std::vector<fs::File> splashFiles;
 
 void getSplashImages()
 {
-  Serial.printf("getsplash\n");
   fs::File root = SPIFFS.open("/"); 
 
   while (fs::File file = root.openNextFile()) 
   {
-    Serial.printf("File: %s\n", file.name());
       if (!strncmp(file.name(), "splash-", 7))
       {
         splashFiles.push_back(file);
@@ -162,7 +160,7 @@ void initStandbyUi()
 {
   standbyScreen = lv_obj_create(NULL);
   standbyTemperatureArc = lv_arc_create(standbyScreen);
-  lv_obj_set_size(standbyTemperatureArc, 236, 236);
+  lv_obj_set_size(standbyTemperatureArc, 230, 230);
   lv_obj_set_style_arc_width(standbyTemperatureArc, 16, LV_PART_MAIN);
   lv_obj_set_style_arc_width(standbyTemperatureArc, 16, LV_PART_INDICATOR);
   lv_arc_set_rotation(standbyTemperatureArc, 145);
@@ -182,7 +180,7 @@ void initInfuseUi()
   infuseScreen = lv_obj_create(NULL);
 
   infusePressureArc = lv_arc_create(infuseScreen);
-  lv_obj_set_size(infusePressureArc, 236, 236);
+  lv_obj_set_size(infusePressureArc, 230, 230);
   lv_obj_set_style_arc_width(infusePressureArc, 16, LV_PART_MAIN);
   lv_obj_set_style_arc_width(infusePressureArc, 16, LV_PART_INDICATOR);
   lv_arc_set_rotation(infusePressureArc, 145);
@@ -191,7 +189,7 @@ void initInfuseUi()
   lv_obj_center(infusePressureArc);
 
   infuseTemperatureDiffArc = lv_arc_create(infuseScreen);
-  lv_obj_set_size(infuseTemperatureDiffArc, 236, 236);
+  lv_obj_set_size(infuseTemperatureDiffArc, 230, 230);
   lv_obj_set_style_arc_width(infuseTemperatureDiffArc, 16, LV_PART_MAIN);
   lv_obj_set_style_arc_width(infuseTemperatureDiffArc, 16, LV_PART_INDICATOR);
   lv_arc_set_rotation(infuseTemperatureDiffArc, 50);
@@ -217,6 +215,7 @@ bool steam = false;
 
 uint32_t lastSplashDisplayTime = 0;
 uint32_t currentSplash = 0;
+uint32_t currentSplashPos = 0;
 
 lv_area_t excluded = {
     56,
@@ -239,15 +238,19 @@ void lvglUpdateTaskFunc(void *parameter)
       if (lastSplashDisplayTime == 0 || now > lastSplashDisplayTime + SPLASH_IMAGE_DURATION)
       {
         currentSplash = (currentSplash + 1) % splashFiles.size();
-        Serial.printf("Current splash: %d\n", currentSplash);
-        splashFiles[currentSplash].seek(0);
+        currentSplashPos = 0;
+        lastSplashDisplayTime = now;
+      }
+      if (currentSplashPos < 16)
+      {
         for (int i = 0; i < 8; ++i)
         {
-          splashFiles[currentSplash].read(splashBuf, 4096);
-          display.pushImageDMA(56, 110 + i * 16, 128, 16, (uint16_t *)splashBuf);
+          int row = i * 16 + currentSplashPos;
+          splashFiles[currentSplash].seek(row * 256);
+          splashFiles[currentSplash].read(splashBuf, 256);
+          display.pushImageDMA(56, 110 + row, 128, 1, (uint16_t *)splashBuf);
         }
-        lastSplashDisplayTime = now;
-        Serial.printf("Update duration: %d\n", millis() - start);
+        currentSplashPos++;
       }
     }
     else
@@ -506,7 +509,7 @@ void loop()
       dimmerSetLevel(0);
       valveDeadline = windowStart + 2000;
 
-      lastSplashDisplayTime = 0;
+      currentSplashPos = 0;
       //initUiStandby(tft);
     }
   }
