@@ -218,17 +218,23 @@ bool steam = false;
 uint32_t lastSplashDisplayTime = 0;
 uint32_t currentSplash = 0;
 
+lv_area_t excluded = {
+    56,
+    112,
+    184,
+    240
+};
+
 void lvglUpdateTaskFunc(void *parameter)
 {
   for (;;)
   {
     vTaskSuspend(NULL);
     unsigned long start = millis();
-    lv_timer_handler();
-    //Serial.printf("Update duration: %d\n", millis() - start);
 
     if (!infusing && !steam && !splashFiles.empty())
     {
+      display.setLvglExlucdedArea(excluded);
       unsigned long now = millis();
       if (lastSplashDisplayTime == 0 || now > lastSplashDisplayTime + SPLASH_IMAGE_DURATION)
       {
@@ -244,6 +250,13 @@ void lvglUpdateTaskFunc(void *parameter)
         Serial.printf("Update duration: %d\n", millis() - start);
       }
     }
+    else
+    {
+      display.clearLvglExcludedArea();
+    }
+
+    lv_timer_handler();
+    //Serial.printf("Update duration: %d\n", millis() - start);
   }
 }
 
@@ -493,6 +506,7 @@ void loop()
       dimmerSetLevel(0);
       valveDeadline = windowStart + 2000;
 
+      lastSplashDisplayTime = 0;
       //initUiStandby(tft);
     }
   }

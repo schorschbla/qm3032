@@ -9,12 +9,24 @@ public:
 
   lv_disp_drv_t &lvglDriver();
 
+  inline void setLvglExlucdedArea(const lv_area_t &excluded)
+  {
+    this->excluded = excluded;
+  }
+
+  inline void clearLvglExcludedArea()
+  {
+    excluded = {0, 0, 0, 0};
+  }
+
 private:
   lgfx::Bus_SPI bus;
   lgfx::Panel_GC9A01 panel;
   lv_color_t buf[16384];
   lv_disp_draw_buf_t draw_buf;
   lv_disp_drv_t disp_drv;
+  lv_area_t excluded;
 
+  void flush(const lv_area_t *area, lv_color_t *color_p);
   static void flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p);
 };
