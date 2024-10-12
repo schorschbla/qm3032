@@ -16,6 +16,8 @@
 #include "dimmer.h"
 #include "display.h"
 
+// for i in 20 36 48; do ./built_in_font_gen.py --size $i -o lv_font_montserrat_$i.c --bpp 4 -r 0x20-0x7f,0xdf,0xe4,0xf6,0xfc,0xc4,0xd6,0xdc; done
+
 #define PID_P                             2.7
 #define PID_I                             0.05
 #define PID_D                             30
@@ -248,7 +250,7 @@ void initPairingUi()
   lv_obj_set_width(pinHintLabel, 230);
   lv_obj_set_style_text_align(pinHintLabel, LV_TEXT_ALIGN_CENTER, 0);
   lv_obj_align(pinHintLabel, LV_ALIGN_CENTER, 0, 40);
-  lv_label_set_text_fmt(pinHintLabel, "Übereinstimmung der PIN durch Umlegen des Brühschalters bestätigen!");
+  lv_label_set_text_fmt(pinHintLabel, "Übereinstimmung der PINs durch Umlegen des Brühschalters bestätigen!");
 }
 
 bool infusing = false;
