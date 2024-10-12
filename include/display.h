@@ -22,7 +22,7 @@ public:
 private:
   lgfx::Bus_SPI bus;
   lgfx::Panel_GC9A01 panel;
-  lv_color_t buf[16384];
+  lv_color_t buf[8192];
   lv_disp_draw_buf_t draw_buf;
   lv_disp_drv_t disp_drv;
   lv_area_t excluded;

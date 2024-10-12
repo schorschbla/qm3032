@@ -20,7 +20,7 @@ Display::Display(uint32_t freqWrite, int16_t pinSclk, int16_t pinMosi, int16_t p
 
     setPanel(&panel); 
 
-    lv_disp_draw_buf_init(&draw_buf, buf, NULL, 16384);
+    lv_disp_draw_buf_init(&draw_buf, buf, NULL, 8192);
     lv_disp_drv_init(&disp_drv);
     disp_drv.hor_res = 240;
     disp_drv.ver_res = 240;

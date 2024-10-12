@@ -8,6 +8,10 @@
 #include <PID_v1.h>
 #include <pidautotuner.h>
 
+#include <BLEDevice.h>
+#include <BLEUtils.h>
+#include <BLEServer.h>
+
 #include <vector>
 
 #include "gradient.h"
@@ -25,7 +29,7 @@
 #define STEAM_TEMPERATURE                           125
 #define STEAM_WATER_SUPPLY_THRESHOLD_TEMPERATURE    10
 
-#define TEMPERATURE                       90
+#define TEMPERATURE                       88
 #define TEMPERATURE_ARRIVAL_THRESHOLD     4
 #define TEMPERATURE_ARRIVAL_MINIMUM_TIME_BETWEEN_CHANGES     5000
 
@@ -117,7 +121,7 @@ void IRAM_ATTR switchOffHeating() {
     digitalWrite(PIN_HEATING, LOW);
 }
 
-unsigned char splashBuf[4096];
+unsigned char splashBuf[256];
 
 void setTemperature(float t)
 {
@@ -263,12 +267,42 @@ void lvglUpdateTaskFunc(void *parameter)
   }
 }
 
+BLEServer *pServer;
+BLECharacteristic *tempCharacteristic;
+
+#define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
+#define TEMP_CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
+
+void initBt()
+{
+  BLEDevice::init("Qm3032");
+  pServer = BLEDevice::createServer();
+  BLEService *pService = pServer->createService(SERVICE_UUID);
+  tempCharacteristic = pService->createCharacteristic(
+        TEMP_CHARACTERISTIC_UUID,
+    BLECharacteristic::PROPERTY_READ |                       BLECharacteristic::PROPERTY_NOTIFY |
+                      BLECharacteristic::PROPERTY_INDICATE
+  );
+
+  pService->start();
+  // BLEAdvertising *pAdvertising = pServer->getAdvertising();  // this still is working for backward compatibility
+  BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+  pAdvertising->addServiceUUID(SERVICE_UUID);
+  pAdvertising->setScanResponse(true);
+  pAdvertising->setMinPreferred(0x06);  // functions that help with iPhone connections issue
+  pAdvertising->setMinPreferred(0x12);
+  BLEDevice::startAdvertising();
+}
+
+
 TaskHandle_t lvglUpdateTask;
 
 
 void setup()
 {
   Serial.begin(9600);
+
+  Serial.printf("Starting\n");
 
 	pinMode(15, INPUT_PULLDOWN);
 	attachInterrupt(15, incrementFlowCounter, CHANGE);
@@ -318,6 +352,9 @@ void setup()
 #endif
 
   xTaskCreatePinnedToCore(lvglUpdateTaskFunc, "lvglUpdateTask", 10000, NULL, 1, &lvglUpdateTask, 0);
+  Serial.printf("Init bt\n");
+  initBt();
+  Serial.printf("Done\n");
 }
 
 void heat(unsigned int durationMillis)
@@ -583,6 +620,9 @@ void loop()
   if (cycle % MAX31856_READ_INTERVAL_CYCLES == 0)
   {
     temperatureIs = thermo.calculateTemperature(thermo.readRTDCont(), MAX31865_RNOMINAL, MAX31865_RREF);
+    int temperatureIsInt = (int)(temperatureIs * 10);
+    tempCharacteristic->setValue(temperatureIsInt);
+    tempCharacteristic->notify();
 
     if (cycle % (MAX31856_READ_INTERVAL_CYCLES * TEMPERATURE_PID_CYCLE_FACTOR) == 0)
     { 
@@ -651,6 +691,11 @@ void loop()
   {
     updateUi();
     vTaskResume(lvglUpdateTask);
+  }
+
+  if (!pServer->getConnectedCount() == 0)
+  {
+    pServer->startAdvertising();
   }
 
   unsigned int elapsed = millis() - windowStart;
