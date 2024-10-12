@@ -145,12 +145,16 @@ lv_obj_t *standbyScreen;
 lv_obj_t *standbyTemperatureArc;
 lv_obj_t *standbyTemperatureLabel;
 
-
 lv_obj_t *infuseScreen;
 lv_obj_t *infusePressureArc;
 lv_obj_t *infusePressureLabel;
 lv_obj_t *infuseTemperatureDiffArc;
 lv_obj_t *infuseTemperatureLabel;
+
+lv_obj_t *pairingWaitScreen;
+
+lv_obj_t *pairingPinScreen;
+lv_obj_t *pairingPinLabel;
 
 void initStandbyUi()
 {
@@ -204,6 +208,47 @@ void initInfuseUi()
   lv_obj_set_width(infuseTemperatureLabel, 150);
   lv_obj_set_style_text_align(infuseTemperatureLabel, LV_TEXT_ALIGN_CENTER, 0);
   lv_obj_align(infuseTemperatureLabel, LV_ALIGN_CENTER, 0, 20);
+}
+
+void initPairingUi()
+{
+  pairingWaitScreen = lv_obj_create(NULL);
+
+  lv_obj_t *symbolLabel = lv_label_create(pairingWaitScreen);
+  lv_obj_set_style_text_font(symbolLabel, &lv_font_montserrat_48, 0);
+  lv_obj_set_width(symbolLabel, 230);
+  lv_obj_set_style_text_align(symbolLabel, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_align(symbolLabel, LV_ALIGN_CENTER, 0, -50);
+  lv_label_set_text_fmt(symbolLabel, LV_SYMBOL_BLUETOOTH);
+
+  lv_obj_t *pairingLabel = lv_label_create(pairingWaitScreen);
+  lv_obj_set_style_text_font(pairingLabel, &lv_font_montserrat_36, 0);
+  lv_obj_set_width(pairingLabel, 230);
+  lv_obj_set_style_text_align(pairingLabel, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_align(pairingLabel, LV_ALIGN_CENTER, 0, 20);
+  lv_label_set_text_fmt(pairingLabel, "Kopplung\naktiv");
+
+  pairingPinScreen = lv_obj_create(NULL);
+
+  lv_obj_t *pinLabel = lv_label_create(pairingPinScreen);
+  lv_obj_set_style_text_font(pinLabel, &lv_font_montserrat_36, 0);
+  lv_obj_set_width(pinLabel, 230);
+  lv_obj_set_style_text_align(pinLabel, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_align(pinLabel, LV_ALIGN_CENTER, 0, -85);
+  lv_label_set_text_fmt(pinLabel, "PIN:");
+
+  pairingPinLabel = lv_label_create(pairingPinScreen);
+  lv_obj_set_style_text_font(pairingPinLabel, &lv_font_montserrat_48, 0);
+  lv_obj_set_width(pairingPinLabel, 230);
+  lv_obj_set_style_text_align(pairingPinLabel, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_align(pairingPinLabel, LV_ALIGN_CENTER, 0, -45);
+
+  lv_obj_t *pinHintLabel = lv_label_create(pairingPinScreen);
+  lv_obj_set_style_text_font(pinHintLabel, &lv_font_montserrat_20, 0);
+  lv_obj_set_width(pinHintLabel, 230);
+  lv_obj_set_style_text_align(pinHintLabel, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_align(pinHintLabel, LV_ALIGN_CENTER, 0, 40);
+  lv_label_set_text_fmt(pinHintLabel, "Übereinstimmung der PIN durch Umlegen des Brühschalters bestätigen!");
 }
 
 bool infusing = false;
@@ -300,11 +345,59 @@ bool writeConfig(const struct Qm3032Config &config)
   return false;
 }
 
+uint32_t pairingCode = 0;
+
+void BTConfirmRequestCallback(uint32_t numVal) 
+{
+  pairingCode = numVal;
+}
+
+void BTIgnoreRequestCallback(uint32_t numVal) 
+{
+  bt.confirmReply(false);
+}
+
+uint32_t pairingState = 0;
+
+void BTAuthCompleteCallback(boolean success) 
+{
+  if (success) {
+    pairingState = 1;
+  } else {
+    pairingState = 2;
+  }
+}
+
 Qm3032Config config;
+
+bool pairing = false;
 
 void setup()
 {
   Serial.begin(9600);
+
+  pinMode(PIN_INFUSE_SWITCH, INPUT_PULLDOWN);
+  pinMode(PIN_STEAM_SWITCH, INPUT_PULLDOWN);
+
+  bt.enableSSP();
+
+  display.init();
+  display.setRotation(1);
+  lv_init();
+  lv_disp_drv_register(&display.lvglDriver());
+
+  if (digitalRead(PIN_INFUSE_SWITCH) && digitalRead(PIN_STEAM_SWITCH))
+  {
+    pairing = true;
+    bt.onConfirmRequest(BTConfirmRequestCallback);
+    bt.onAuthComplete(BTAuthCompleteCallback);
+    bt.begin("Qm3032");
+
+    initPairingUi();
+    lv_scr_load(pairingWaitScreen);
+
+    return;
+  }
 
 	pinMode(15, INPUT_PULLDOWN);
 	attachInterrupt(15, incrementFlowCounter, CHANGE);
@@ -320,8 +413,6 @@ void setup()
 
   pinMode(PIN_HEATING, OUTPUT);
   pinMode(PIN_VALVE, OUTPUT);
-  pinMode(PIN_INFUSE_SWITCH, INPUT_PULLDOWN);
-  pinMode(PIN_STEAM_SWITCH, INPUT_PULLDOWN);
 
 #ifdef PID_TEMPERATURE_AUTOTUNE
   tuner.setTargetInputValue(temperatureSet);
@@ -333,10 +424,6 @@ void setup()
 	heatingTimer = timerBegin(1, 80, true);
 	timerAttachInterrupt(heatingTimer, &switchOffHeating, true);
 
-  display.init();
-  display.setRotation(1);
-  lv_init();
-  lv_disp_drv_register(&display.lvglDriver());
   initStandbyUi();
   initInfuseUi();
   lv_scr_load(standbyScreen);
@@ -350,8 +437,6 @@ void setup()
   tuner.startTuningLoop(micros());
 #endif
 
-  xTaskCreatePinnedToCore(lvglUpdateTaskFunc, "lvglUpdateTask", 10000, NULL, 1, &lvglUpdateTask, 0);
-
   if (!readConfig(config))
   {
     Serial.printf("Read config failed\n");
@@ -361,7 +446,10 @@ void setup()
   setTemperature(config.temperature);
   setPidTunings(PID_P, 0, 0);
 
-  bt.begin("Qm3032");
+  xTaskCreatePinnedToCore(lvglUpdateTaskFunc, "lvglUpdateTask", 10000, NULL, 1, &lvglUpdateTask, 0);
+
+  bt.onConfirmRequest(BTIgnoreRequestCallback);
+  bt.begin("Qm3032", false);
 }
 
 void heat(unsigned int durationMillis)
@@ -534,9 +622,28 @@ void processBt()
   }
 }
 
+void loopPairing()
+{
+  if (pairingCode != 0)
+  {
+    lv_label_set_text_fmt(pairingPinLabel, "%06lu", pairingCode);
+    lv_scr_load(pairingPinScreen);
+    pairingCode = 0;    
+  }
+
+  lv_timer_handler();
+  delay(40);
+}
+
 void loop()
 {
   unsigned long windowStart = millis();
+
+  if (pairing)
+  {
+    loopPairing();
+    return;
+  }
 
   if (!steam && digitalRead(PIN_INFUSE_SWITCH) != infusing)
   {
