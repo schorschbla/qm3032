@@ -8,9 +8,7 @@
 #include <PID_v1.h>
 #include <pidautotuner.h>
 
-#include <BLEDevice.h>
-#include <BLEUtils.h>
-#include <BLEServer.h>
+#include "BluetoothSerial.h"
 
 #include <vector>
 
@@ -26,16 +24,10 @@
 
 #define TEMPERATURE_SAFETY_GUARD                    130
 
-#define STEAM_TEMPERATURE                           125
 #define STEAM_WATER_SUPPLY_THRESHOLD_TEMPERATURE    10
 
-#define TEMPERATURE                       88
 #define TEMPERATURE_ARRIVAL_THRESHOLD     4
 #define TEMPERATURE_ARRIVAL_MINIMUM_TIME_BETWEEN_CHANGES     5000
-
-
-#define PREINFUSION_VOLUME_ML  5.0
-#define PREINFUSION_SOAK_TIME 8000
 
 #define PID_P_INFUSE                      50
 #define PID_I_INFUSE                      0.2
@@ -46,7 +38,7 @@
 #define PID_D_STEAM                       145
 
 #define PUMP_RAMPUP_TIME                  7000
-#define PUMP_MIN_POWER                    150
+#define PUMP_MIN_POWER                    0.6
 
 #define XDB401_MAX_BAR                    20
 #define XDB401_READ_INTERVAL_CYCLES       1
@@ -267,42 +259,52 @@ void lvglUpdateTaskFunc(void *parameter)
   }
 }
 
-BLEServer *pServer;
-BLECharacteristic *tempCharacteristic;
-
-#define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
-#define TEMP_CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
-
-void initBt()
-{
-  BLEDevice::init("Qm3032");
-  pServer = BLEDevice::createServer();
-  BLEService *pService = pServer->createService(SERVICE_UUID);
-  tempCharacteristic = pService->createCharacteristic(
-        TEMP_CHARACTERISTIC_UUID,
-    BLECharacteristic::PROPERTY_READ |                       BLECharacteristic::PROPERTY_NOTIFY |
-                      BLECharacteristic::PROPERTY_INDICATE
-  );
-
-  pService->start();
-  // BLEAdvertising *pAdvertising = pServer->getAdvertising();  // this still is working for backward compatibility
-  BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
-  pAdvertising->addServiceUUID(SERVICE_UUID);
-  pAdvertising->setScanResponse(true);
-  pAdvertising->setMinPreferred(0x06);  // functions that help with iPhone connections issue
-  pAdvertising->setMinPreferred(0x12);
-  BLEDevice::startAdvertising();
-}
-
+BluetoothSerial bt;
 
 TaskHandle_t lvglUpdateTask;
 
+#define CONFIG_VERSION    0x0001
+
+struct Qm3032Config
+{
+  uint16_t version;
+  float temperature;
+  float pumpPower;
+  float preinfusionVolume;
+  uint16_t preinfusionDuration;
+  float steamTemperature;
+};
+
+struct Qm3032Config defaultConfig = { 1, 30.0, 0.8, 5.0, 8000, 125.0 };
+
+bool readConfig(struct Qm3032Config &config)
+{
+  fs::File file = SPIFFS.open("/config.bin", "r"); 
+  if (file)
+  {
+    bool success = file.read(reinterpret_cast<uint8_t *>(&config), sizeof(struct Qm3032Config)) == sizeof(struct Qm3032Config);
+    file.close();
+    return success;
+  }
+  return false;
+}
+
+bool writeConfig(const struct Qm3032Config &config)
+{
+  fs::File file = SPIFFS.open("/config.bin", "w"); 
+  if (file)
+  {    
+    file.write(reinterpret_cast<const uint8_t *>(&config), sizeof(struct Qm3032Config));
+    file.close();
+  }
+  return false;
+}
+
+Qm3032Config config;
 
 void setup()
 {
   Serial.begin(9600);
-
-  Serial.printf("Starting\n");
 
 	pinMode(15, INPUT_PULLDOWN);
 	attachInterrupt(15, incrementFlowCounter, CHANGE);
@@ -320,9 +322,6 @@ void setup()
   pinMode(PIN_VALVE, OUTPUT);
   pinMode(PIN_INFUSE_SWITCH, INPUT_PULLDOWN);
   pinMode(PIN_STEAM_SWITCH, INPUT_PULLDOWN);
-
-  setTemperature(TEMPERATURE);
-  setPidTunings(PID_P, 0, 0);
 
 #ifdef PID_TEMPERATURE_AUTOTUNE
   tuner.setTargetInputValue(temperatureSet);
@@ -352,9 +351,17 @@ void setup()
 #endif
 
   xTaskCreatePinnedToCore(lvglUpdateTaskFunc, "lvglUpdateTask", 10000, NULL, 1, &lvglUpdateTask, 0);
-  Serial.printf("Init bt\n");
-  initBt();
-  Serial.printf("Done\n");
+
+  if (!readConfig(config))
+  {
+    Serial.printf("Read config failed\n");
+    config = defaultConfig;
+  }
+
+  setTemperature(config.temperature);
+  setPidTunings(PID_P, 0, 0);
+
+  bt.begin("Qm3032");
 }
 
 void heat(unsigned int durationMillis)
@@ -502,6 +509,31 @@ void updateUiFlow()
 }
 */
 
+void processBt()
+{
+  if (bt.available())
+  {
+    char buf[256];
+    size_t read = bt.readBytes(buf, sizeof(buf) - 1);
+    Serial.printf("bt read: %d\n", read);
+    if (read > 0)
+    {
+      buf[read] = 0;
+      float temp;
+      if (sscanf(buf, "settemp %f", &temp) > 0)
+      {
+        Serial.printf("settemp: %f\n", temp);
+        if (temp > 80 && temp < 98)
+        {
+          config.temperature = temp;
+          writeConfig(config);
+          setTemperature(config.temperature);
+        }
+      }
+    }
+  }
+}
+
 void loop()
 {
   unsigned long windowStart = millis();
@@ -527,7 +559,7 @@ void loop()
       // Skip prefusion if infusion is turned on repeatedly 
       if (infuseStart > windowStart - 2000)
       {
-        infuseStart = windowStart - PREINFUSION_SOAK_TIME;
+        infuseStart = windowStart - config.preinfusionDuration;
       }
       else
       {
@@ -539,7 +571,7 @@ void loop()
    }
     else
     {
-      setTemperature(TEMPERATURE);
+      setTemperature(config.temperature);
       setPidTunings(PID_P, 0, 0);
       temperatureArrival = false;
 
@@ -565,7 +597,7 @@ void loop()
       steamTuner.startTuningLoop(micros());
 #endif
 
-      setTemperature(STEAM_TEMPERATURE);
+      setTemperature(config.steamTemperature);
       setPidTunings(PID_P_STEAM, PID_I_STEAM, PID_D_STEAM);
       digitalWrite(PIN_VALVE, HIGH);
       valveDeadline = 0;
@@ -574,7 +606,7 @@ void loop()
     }
     else
     {
-      setTemperature(TEMPERATURE);
+      setTemperature(config.temperature);
       dimmerSetLevel(0);
       setPidTunings(PID_P, 0, 0);
       temperatureArrival = false;
@@ -589,20 +621,20 @@ void loop()
       unsigned char pumpValue;
       unsigned int infusionTime = windowStart - infuseStart;
       float infusionVolume = (flowCounter - flowCounterInfusionStart) * FLOW_ML_PER_TICK;
-      if (infusionTime < PREINFUSION_SOAK_TIME)
+      if (infusionTime < config.preinfusionDuration)
       {
-        pumpValue = infusionVolume < PREINFUSION_VOLUME_ML ? PUMP_MIN_POWER : 0;
+        pumpValue = infusionVolume < config.preinfusionVolume ? PUMP_MIN_POWER : 0;
       }
       else
       {
-        pumpValue = PUMP_MIN_POWER + min(1.0, (infusionTime - PREINFUSION_SOAK_TIME) / (double)PUMP_RAMPUP_TIME) * 50;
+        pumpValue = (PUMP_MIN_POWER + min(1.0, (infusionTime - config.preinfusionDuration) / (double)PUMP_RAMPUP_TIME) * (config.pumpPower - PUMP_MIN_POWER)) * 255;
       }
 
       dimmerSetLevel(pumpValue);
   }
   else if (steam)
   {
-      if (cycle % STEAM_CYCLE == 0 && temperatureIs > STEAM_TEMPERATURE - STEAM_WATER_SUPPLY_THRESHOLD_TEMPERATURE)
+      if (cycle % STEAM_CYCLE == 0 && temperatureIs > config.steamTemperature - STEAM_WATER_SUPPLY_THRESHOLD_TEMPERATURE)
       {
          dimmerSetLevel(220);
       }
@@ -621,8 +653,11 @@ void loop()
   {
     temperatureIs = thermo.calculateTemperature(thermo.readRTDCont(), MAX31865_RNOMINAL, MAX31865_RREF);
     int temperatureIsInt = (int)(temperatureIs * 10);
-    tempCharacteristic->setValue(temperatureIsInt);
-    tempCharacteristic->notify();
+    
+    if (cycle % (MAX31856_READ_INTERVAL_CYCLES * 10) == 0 && bt.connected())
+    {
+      bt.printf("temp set %f is %f\n", temperatureSet, temperatureIs);
+    }
 
     if (cycle % (MAX31856_READ_INTERVAL_CYCLES * TEMPERATURE_PID_CYCLE_FACTOR) == 0)
     { 
@@ -642,7 +677,7 @@ void loop()
 #else
       temperaturePid.Compute();
 #endif
-      if (steam && temperatureIs < STEAM_TEMPERATURE - STEAM_WATER_SUPPLY_THRESHOLD_TEMPERATURE)
+      if (steam && temperatureIs < config.steamTemperature - STEAM_WATER_SUPPLY_THRESHOLD_TEMPERATURE)
       {
         pidOut = PID_MAX_OUTPUT;
       }
@@ -657,7 +692,7 @@ void loop()
 
     if (!steam && !infusing)
     {
-      float delta = TEMPERATURE - temperateAvg.get();
+      float delta = config.temperature - temperateAvg.get();
       bool arrival = abs(delta) < TEMPERATURE_ARRIVAL_THRESHOLD;
       if (arrival != temperatureArrival && lastTemperatureArrivalChange + TEMPERATURE_ARRIVAL_MINIMUM_TIME_BETWEEN_CHANGES < windowStart)
       {
@@ -693,9 +728,9 @@ void loop()
     vTaskResume(lvglUpdateTask);
   }
 
-  if (!pServer->getConnectedCount() == 0)
+  if (!infusing && !steam)
   {
-    pServer->startAdvertising();
+    processBt();
   }
 
   unsigned int elapsed = millis() - windowStart;
