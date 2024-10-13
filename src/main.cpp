@@ -16,7 +16,7 @@
 #include "dimmer.h"
 #include "display.h"
 
-// for i in 20 36 48; do ./built_in_font_gen.py --size $i -o lv_font_montserrat_$i.c --bpp 4 -r 0x20-0x7f,0xdf,0xe4,0xf6,0xfc,0xc4,0xd6,0xdc; done
+// for i in 20 36 48; do ./built_in_font_gen.py --size $i -o lv_font_montserrat_$i.c --bpp 4 -r 0x20-0x7f,0xdf,0xe4,0xf6,0xfc,0xc4,0xd6,0xdc,0xb0; done
 
 #define PID_P                             2.7
 #define PID_I                             0.05
@@ -203,13 +203,20 @@ void initInfuseUi()
   lv_obj_set_style_text_font(infusePressureLabel, &lv_font_montserrat_48, 0);
   lv_obj_set_width(infusePressureLabel, 150);
   lv_obj_set_style_text_align(infusePressureLabel, LV_TEXT_ALIGN_CENTER, 0);
-  lv_obj_align(infusePressureLabel, LV_ALIGN_CENTER, 0, -50);
+  lv_obj_align(infusePressureLabel, LV_ALIGN_CENTER, 0, -35);
+
+  lv_obj_t *barLabel = lv_label_create(infuseScreen);
+  lv_obj_set_style_text_font(barLabel, &lv_font_montserrat_20, 0);
+  lv_obj_set_width(barLabel, 150);
+  lv_obj_set_style_text_align(barLabel, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_align(barLabel, LV_ALIGN_CENTER, 0, -70);
+  lv_label_set_text_fmt(barLabel, "Bar");
 
   infuseTemperatureLabel = lv_label_create(infuseScreen);
   lv_obj_set_style_text_font(infuseTemperatureLabel, &lv_font_montserrat_48, 0);
   lv_obj_set_width(infuseTemperatureLabel, 150);
   lv_obj_set_style_text_align(infuseTemperatureLabel, LV_TEXT_ALIGN_CENTER, 0);
-  lv_obj_align(infuseTemperatureLabel, LV_ALIGN_CENTER, 0, 20);
+  lv_obj_align(infuseTemperatureLabel, LV_ALIGN_CENTER, 0, 40);
 }
 
 void initPairingUi()
@@ -250,7 +257,7 @@ void initPairingUi()
   lv_obj_set_width(pinHintLabel, 230);
   lv_obj_set_style_text_align(pinHintLabel, LV_TEXT_ALIGN_CENTER, 0);
   lv_obj_align(pinHintLabel, LV_ALIGN_CENTER, 0, 40);
-  lv_label_set_text_fmt(pinHintLabel, "Übereinstimmung der PINs durch Umlegen des Brühschalters bestätigen!");
+  lv_label_set_text_fmt(pinHintLabel, "Übereinstimmung der PINs durch Um- legen des Brüh- oder Dampfschalters bestätigen!");
 }
 
 bool infusing = false;
@@ -388,7 +395,7 @@ void setup()
   lv_init();
   lv_disp_drv_register(&display.lvglDriver());
 
-  if (digitalRead(PIN_INFUSE_SWITCH) && digitalRead(PIN_STEAM_SWITCH))
+  if (digitalRead(PIN_INFUSE_SWITCH) || digitalRead(PIN_STEAM_SWITCH))
   {
     pairing = true;
     bt.onConfirmRequest(BTConfirmRequestCallback);
