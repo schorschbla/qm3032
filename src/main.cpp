@@ -16,7 +16,9 @@
 #include "dimmer.h"
 #include "display.h"
 
-// for i in 20 36 48; do ./built_in_font_gen.py --size $i -o lv_font_montserrat_$i.c --bpp 4 -r 0x20-0x7f,0xdf,0xe4,0xf6,0xfc,0xc4,0xd6,0xdc,0xb0; done
+//lv_font_conv  --no-compress --no-prefilter --bpp 4 --size 20 --font Montserrat-Medium.ttf -r 0x20-0x7f,0xdf,0xe4,0xf6,0xfc,0xc4,0xd6,0xdc,0xb0  --font FontAwesome5-Solid+Brands+Regular.woff -r 61441,61448,61451,61452,61452,61453,61457,61459,61461,61465,61468,61473,61478,61479,61480,61502,61507,61512,61515,61516,61517,61521,61522,61523,61524,61543,61544,61550,61552,61553,61556,61559,61560,61561,61563,61587,61589,61636,61637,61639,61641,61664,61671,61674,61683,61724,61732,61787,61931,62016,62017,62018,62019,62020,62087,62099,62212,62189,62810,63426,63650,62033 --format lvgl -o lv_font_montserrat_20.c --force-fast-kern-format
+//lv_font_conv  --no-compress --no-prefilter --bpp 4 --size 36 --font Montserrat-Medium.ttf -r 0x20-0x7f,0xdf,0xe4,0xf6,0xfc,0xc4,0xd6,0xdc,0xb0  --font FontAwesome5-Solid+Brands+Regular.woff -r 61441,61448,61451,61452,61452,61453,61457,61459,61461,61465,61468,61473,61478,61479,61480,61502,61507,61512,61515,61516,61517,61521,61522,61523,61524,61543,61544,61550,61552,61553,61556,61559,61560,61561,61563,61587,61589,61636,61637,61639,61641,61664,61671,61674,61683,61724,61732,61787,61931,62016,62017,62018,62019,62020,62087,62099,62212,62189,62810,63426,63650,62033 --format lvgl -o lv_font_montserrat_36.c --force-fast-kern-format
+//lv_font_conv  --no-compress --no-prefilter --bpp 4 --size 48 --font Montserrat-Medium.ttf -r 0x20-0x7f,0xdf,0xe4,0xf6,0xfc,0xc4,0xd6,0xdc,0xb0  --font FontAwesome5-Solid+Brands+Regular.woff -r 61441,61448,61451,61452,61452,61453,61457,61459,61461,61465,61468,61473,61478,61479,61480,61502,61507,61512,61515,61516,61517,61521,61522,61523,61524,61543,61544,61550,61552,61553,61556,61559,61560,61561,61563,61587,61589,61636,61637,61639,61641,61664,61671,61674,61683,61724,61732,61787,61931,62016,62017,62018,62019,62020,62087,62099,62212,62189,62810,63426,63650,62033 --format lvgl -o lv_font_montserrat_48.c --force-fast-kern-format
 
 #define PID_P                             2.7
 #define PID_I                             0.05
@@ -154,9 +156,14 @@ lv_obj_t *infuseTemperatureDiffArc;
 lv_obj_t *infuseTemperatureLabel;
 
 lv_obj_t *pairingWaitScreen;
-
 lv_obj_t *pairingPinScreen;
+lv_obj_t *pairingWaitConfirmScreen;
+lv_obj_t *pairingFailureScreen;
+lv_obj_t *pairingSuccessScreen;
+
 lv_obj_t *pairingPinLabel;
+
+
 
 void initStandbyUi()
 {
@@ -258,6 +265,62 @@ void initPairingUi()
   lv_obj_set_style_text_align(pinHintLabel, LV_TEXT_ALIGN_CENTER, 0);
   lv_obj_align(pinHintLabel, LV_ALIGN_CENTER, 0, 40);
   lv_label_set_text_fmt(pinHintLabel, "Übereinstimmung der PINs durch Um- legen des Brüh- oder Dampfschalters bestätigen!");
+
+  pairingSuccessScreen = lv_obj_create(NULL);
+
+  symbolLabel = lv_label_create(pairingSuccessScreen);
+  lv_obj_set_style_text_font(symbolLabel, &lv_font_montserrat_48, 0);
+  lv_obj_set_width(symbolLabel, 230);
+  lv_obj_set_style_text_align(symbolLabel, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_align(symbolLabel, LV_ALIGN_CENTER, 0, -65);
+  lv_label_set_text_fmt(symbolLabel, LV_SYMBOL_OK);
+
+  lv_obj_t *successLabel = lv_label_create(pairingSuccessScreen);
+  lv_obj_set_style_text_font(successLabel, &lv_font_montserrat_36, 0);
+  lv_obj_set_width(successLabel, 230);
+  lv_obj_set_style_text_align(successLabel, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_align(successLabel, LV_ALIGN_CENTER, 0, -5);
+  lv_label_set_text_fmt(successLabel, "Kopplung\nerfolgreich");
+
+  lv_obj_t *successText = lv_label_create(pairingSuccessScreen);
+  lv_obj_set_style_text_font(successText, &lv_font_montserrat_20, 0);
+  lv_obj_set_width(successText, 230);
+  lv_obj_set_style_text_align(successText, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_align(successText, LV_ALIGN_CENTER, 0, 65);
+  lv_label_set_text_fmt(successText, "Maschine neu\nstarten!");
+
+
+  pairingFailureScreen = lv_obj_create(NULL);
+
+  symbolLabel = lv_label_create(pairingFailureScreen);
+  lv_obj_set_style_text_font(symbolLabel, &lv_font_montserrat_48, 0);
+  lv_obj_set_width(symbolLabel, 230);
+  lv_obj_set_style_text_align(symbolLabel, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_align(symbolLabel, LV_ALIGN_CENTER, 0, -70);
+  lv_label_set_text_fmt(symbolLabel, LV_SYMBOL_WARNING);
+
+  lv_obj_t *failureText = lv_label_create(pairingFailureScreen);
+  lv_obj_set_style_text_font(failureText, &lv_font_montserrat_20, 0);
+  lv_obj_set_width(failureText, 210);
+  lv_obj_set_style_text_align(failureText, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_align(failureText, LV_ALIGN_CENTER, 0, 20);
+  lv_label_set_text_fmt(failureText, "Kopplung wurde abgelehnt oder nicht rechtzeitig bestätigt. Maschine neu starten!");
+
+  pairingWaitConfirmScreen = lv_obj_create(NULL);
+
+  symbolLabel = lv_label_create(pairingWaitConfirmScreen);
+  lv_obj_set_style_text_font(symbolLabel, &lv_font_montserrat_48, 0);
+  lv_obj_set_width(symbolLabel, 230);
+  lv_obj_set_style_text_align(symbolLabel, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_align(symbolLabel, LV_ALIGN_CENTER, 0, -60);
+  lv_label_set_text_fmt(symbolLabel, "\xef\x89\x91");
+
+  lv_obj_t *waitConfirmText = lv_label_create(pairingWaitConfirmScreen);
+  lv_obj_set_style_text_font(waitConfirmText, &lv_font_montserrat_20, 0);
+  lv_obj_set_width(waitConfirmText, 210);
+  lv_obj_set_style_text_align(waitConfirmText, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_align(waitConfirmText, LV_ALIGN_CENTER, 0, 20);
+  lv_label_set_text_fmt(waitConfirmText, "Warte auf Bestätigung des zu koppelnden Gerätes...");
 }
 
 bool infusing = false;
@@ -366,20 +429,25 @@ void BTIgnoreRequestCallback(uint32_t numVal)
   bt.confirmReply(false);
 }
 
-uint32_t pairingState = 0;
+#define PAIRING_AUTH_SUCCESS          1
+#define PAIRING_AUTH_FAILURE          2
+
+uint32_t pairingAuthState = 0;
 
 void BTAuthCompleteCallback(boolean success) 
 {
-  if (success) {
-    pairingState = 1;
-  } else {
-    pairingState = 2;
-  }
+  pairingAuthState = success ? PAIRING_AUTH_SUCCESS : PAIRING_AUTH_FAILURE;
 }
 
-Qm3032Config config;
+uint32_t pairingState = 0;
 
-bool pairing = false;
+#define PAIRING_STATE_WAITING                     1
+#define PAIRING_STATE_CONFIRM                     2
+#define PAIRING_STATE_WAIT_REMOTE_CONFIRM         3
+#define PAIRING_STATE_SUCCESS                     4
+#define PAIRING_STATE_FAILURE                     5
+
+Qm3032Config config;
 
 void setup()
 {
@@ -388,16 +456,19 @@ void setup()
   pinMode(PIN_INFUSE_SWITCH, INPUT_PULLDOWN);
   pinMode(PIN_STEAM_SWITCH, INPUT_PULLDOWN);
 
-  bt.enableSSP();
-
   display.init();
   display.setRotation(1);
   lv_init();
   lv_disp_drv_register(&display.lvglDriver());
 
-  if (digitalRead(PIN_INFUSE_SWITCH) || digitalRead(PIN_STEAM_SWITCH))
+  infusing = digitalRead(PIN_INFUSE_SWITCH);
+  steam = digitalRead(PIN_STEAM_SWITCH);
+
+  bt.enableSSP();
+
+  if (infusing || steam)
   {
-    pairing = true;
+    pairingState = PAIRING_STATE_WAITING;
     bt.onConfirmRequest(BTConfirmRequestCallback);
     bt.onAuthComplete(BTAuthCompleteCallback);
     bt.begin("Qm3032");
@@ -633,22 +704,92 @@ void processBt()
 
 void loopPairing()
 {
+  bool confirm = false;
+
+  if (pairingState == PAIRING_STATE_SUCCESS || pairingState == PAIRING_STATE_FAILURE)
+  {
+    if (pairingCode != 0)
+    {
+      bt.confirmReply(false);
+      pairingCode = 0;
+    }
+    delay(100);
+    return;
+  }
+  
+  if (infusing != digitalRead(PIN_INFUSE_SWITCH))
+  {
+    infusing = !infusing;
+    confirm = true;
+  }
+
+  if (steam != digitalRead(PIN_STEAM_SWITCH))
+  {
+    steam = !steam;
+    confirm = true;
+  }    
+
   if (pairingCode != 0)
   {
-    lv_label_set_text_fmt(pairingPinLabel, "%06lu", pairingCode);
-    lv_scr_load(pairingPinScreen);
-    pairingCode = 0;    
+    if (pairingState == PAIRING_STATE_WAITING)
+    {
+      lv_label_set_text_fmt(pairingPinLabel, "%06lu", pairingCode);
+      lv_scr_load(pairingPinScreen);
+      pairingState = PAIRING_STATE_CONFIRM;
+      pairingCode = 0;
+    }
+    else
+    {
+      pairingState = PAIRING_STATE_FAILURE;
+    }
+  }
+
+  if (pairingAuthState == PAIRING_AUTH_SUCCESS)
+  {
+    if (pairingState == PAIRING_STATE_WAIT_REMOTE_CONFIRM)
+    {
+      pairingState = PAIRING_STATE_SUCCESS;
+      lv_scr_load(pairingSuccessScreen);
+    }
+    else
+    {
+      pairingState = PAIRING_STATE_FAILURE;
+    }
+  } 
+  else if (pairingAuthState == PAIRING_AUTH_FAILURE)
+  {
+    pairingState = PAIRING_STATE_FAILURE;
+  }
+
+  if (confirm)
+  {
+    if (pairingState == PAIRING_STATE_CONFIRM)
+    {
+      bt.confirmReply(true);
+      lv_scr_load(pairingWaitConfirmScreen);
+      pairingState = PAIRING_STATE_WAIT_REMOTE_CONFIRM;
+    }
+  }
+
+  if (pairingState == PAIRING_STATE_FAILURE && lv_scr_act() != pairingFailureScreen)
+  {
+    lv_scr_load(pairingFailureScreen);
+  }
+
+  if (pairingState == PAIRING_STATE_FAILURE)
+  {
+    bt.end();
   }
 
   lv_timer_handler();
-  delay(40);
+  delay(100);
 }
 
 void loop()
 {
   unsigned long windowStart = millis();
 
-  if (pairing)
+  if (pairingState != 0)
   {
     loopPairing();
     return;
