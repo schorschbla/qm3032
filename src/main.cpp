@@ -28,7 +28,7 @@
 
 #define TEMPERATURE_SAFETY_GUARD                    130
 
-#define STEAM_WATER_SUPPLY_THRESHOLD_TEMPERATURE    10
+#define STEAM_WATER_SUPPLY_THRESHOLD_TEMPERATURE    15
 
 #define TEMPERATURE_ARRIVAL_THRESHOLD     4
 #define TEMPERATURE_ARRIVAL_MINIMUM_TIME_BETWEEN_CHANGES     5000
@@ -52,7 +52,6 @@
 #define TEMPERATURE_PID_CYCLE_FACTOR      6
 
 #define STEAM_CYCLE                       32
-#define STEAM_OFF                         2
 
 #define FLOW_CYCLES                       5
 #define FLOW_ML_PER_TICK                  0.05
@@ -157,12 +156,12 @@ lv_obj_t *infuseTemperatureLabel;
 
 lv_obj_t *pairingWaitScreen;
 lv_obj_t *pairingPinScreen;
-lv_obj_t *pairingWaitConfirmScreen;
 lv_obj_t *pairingFailureScreen;
 lv_obj_t *pairingSuccessScreen;
 
 lv_obj_t *pairingPinLabel;
 
+lv_obj_t *confirmHintLabel;
 
 
 void initStandbyUi()
@@ -259,12 +258,12 @@ void initPairingUi()
   lv_obj_set_style_text_align(pairingPinLabel, LV_TEXT_ALIGN_CENTER, 0);
   lv_obj_align(pairingPinLabel, LV_ALIGN_CENTER, 0, -45);
 
-  lv_obj_t *pinHintLabel = lv_label_create(pairingPinScreen);
-  lv_obj_set_style_text_font(pinHintLabel, &lv_font_montserrat_20, 0);
-  lv_obj_set_width(pinHintLabel, 230);
-  lv_obj_set_style_text_align(pinHintLabel, LV_TEXT_ALIGN_CENTER, 0);
-  lv_obj_align(pinHintLabel, LV_ALIGN_CENTER, 0, 40);
-  lv_label_set_text_fmt(pinHintLabel, "Übereinstimmung der PINs durch Um- legen des Brüh- oder Dampfschalters bestätigen!");
+  confirmHintLabel = lv_label_create(pairingPinScreen);
+  lv_obj_set_style_text_font(confirmHintLabel, &lv_font_montserrat_20, 0);
+  lv_obj_set_width(confirmHintLabel, 230);
+  lv_obj_set_style_text_align(confirmHintLabel, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_align(confirmHintLabel, LV_ALIGN_CENTER, 0, 40);
+  lv_label_set_text_fmt(confirmHintLabel, "Übereinstimmung der PINs durch Um- legen des Brüh- oder Dampfschalters bestätigen!");
 
   pairingSuccessScreen = lv_obj_create(NULL);
 
@@ -305,22 +304,6 @@ void initPairingUi()
   lv_obj_set_style_text_align(failureText, LV_TEXT_ALIGN_CENTER, 0);
   lv_obj_align(failureText, LV_ALIGN_CENTER, 0, 20);
   lv_label_set_text_fmt(failureText, "Kopplung wurde abgelehnt oder nicht rechtzeitig bestätigt. Maschine neu starten!");
-
-  pairingWaitConfirmScreen = lv_obj_create(NULL);
-
-  symbolLabel = lv_label_create(pairingWaitConfirmScreen);
-  lv_obj_set_style_text_font(symbolLabel, &lv_font_montserrat_48, 0);
-  lv_obj_set_width(symbolLabel, 230);
-  lv_obj_set_style_text_align(symbolLabel, LV_TEXT_ALIGN_CENTER, 0);
-  lv_obj_align(symbolLabel, LV_ALIGN_CENTER, 0, -60);
-  lv_label_set_text_fmt(symbolLabel, "\xef\x89\x91");
-
-  lv_obj_t *waitConfirmText = lv_label_create(pairingWaitConfirmScreen);
-  lv_obj_set_style_text_font(waitConfirmText, &lv_font_montserrat_20, 0);
-  lv_obj_set_width(waitConfirmText, 210);
-  lv_obj_set_style_text_align(waitConfirmText, LV_TEXT_ALIGN_CENTER, 0);
-  lv_obj_align(waitConfirmText, LV_ALIGN_CENTER, 0, 20);
-  lv_label_set_text_fmt(waitConfirmText, "Warte auf Bestätigung des zu koppelnden Gerätes...");
 }
 
 bool infusing = false;
@@ -390,9 +373,10 @@ struct Qm3032Config
   float preinfusionVolume;
   uint16_t preinfusionDuration;
   float steamTemperature;
+  uint8_t steamWaterSupplyCycles;
 };
 
-struct Qm3032Config defaultConfig = { 1, 30.0, 0.8, 5.0, 8000, 125.0 };
+struct Qm3032Config defaultConfig = { 1, 88.0, 0.8, 5.0, 8000, 125.0, 2 };
 
 bool readConfig(struct Qm3032Config &config)
 {
@@ -681,21 +665,36 @@ void processBt()
 {
   if (bt.available())
   {
-    char buf[256];
-    size_t read = bt.readBytes(buf, sizeof(buf) - 1);
-    Serial.printf("bt read: %d\n", read);
+    char buf[512];
+    size_t read = bt.readBytes(buf, sizeof(buf));
     if (read > 0)
     {
-      buf[read] = 0;
-      float temp;
-      if (sscanf(buf, "settemp %f", &temp) > 0)
+      while (read > 0 && (buf[read - 1] == '\n' || buf[read - 1] == '\r'))
       {
-        Serial.printf("settemp: %f\n", temp);
-        if (temp > 80 && temp < 98)
+        buf[read - 1] = 0;
+        read--;
+      }
+      
+      if (!strcmp("get config", buf))
+      {
+        bt.printf("temp %f pumpPower %f steamTemp %f steamWaterSupplyCycles %d preinfusionVolume %f preinfusionDuration %d\n", 
+          config.temperature, config.pumpPower, config.steamTemperature, config.steamWaterSupplyCycles, config.preinfusionVolume, config.preinfusionDuration);
+      }
+      else
+      {
+        float temp;
+        if (sscanf(buf, "set temp %f", &temp) > 0)
         {
-          config.temperature = temp;
-          writeConfig(config);
-          setTemperature(config.temperature);
+          if (temp > 80 && temp < 98)
+          {
+            config.temperature = temp;
+            writeConfig(config);
+            setTemperature(config.temperature);
+          }
+          else
+          {
+            bt.printf("error range 80.0 98.0\n");
+          }
         }
       }
     }
@@ -766,7 +765,7 @@ void loopPairing()
     if (pairingState == PAIRING_STATE_CONFIRM)
     {
       bt.confirmReply(true);
-      lv_scr_load(pairingWaitConfirmScreen);
+      lv_label_set_text_fmt(confirmHintLabel, "\xef\x89\x91 Warte auf Bestätigung der Gegenstelle...");
       pairingState = PAIRING_STATE_WAIT_REMOTE_CONFIRM;
     }
   }
@@ -895,7 +894,7 @@ void loop()
       {
          dimmerSetLevel(220);
       }
-      else if (cycle % STEAM_CYCLE == STEAM_OFF)
+      else if (cycle % STEAM_CYCLE == config.steamWaterSupplyCycles)
       {
          dimmerSetLevel(0);
       }
@@ -913,7 +912,7 @@ void loop()
     
     if (cycle % (MAX31856_READ_INTERVAL_CYCLES * 10) == 0 && bt.connected())
     {
-      bt.printf("temp set %f is %f\n", temperatureSet, temperatureIs);
+      bt.printf("temp %f\n", temperatureIs);
     }
 
     if (cycle % (MAX31856_READ_INTERVAL_CYCLES * TEMPERATURE_PID_CYCLE_FACTOR) == 0)
