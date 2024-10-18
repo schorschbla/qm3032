@@ -879,11 +879,11 @@ void loop()
       float infusionVolume = (flowCounter - flowCounterInfusionStart) * FLOW_ML_PER_TICK;
       if (infusionTime < config.preinfusionDuration)
       {
-        pumpValue = infusionVolume < config.preinfusionVolume ? PUMP_MIN_POWER : 0;
+        pumpValue = (infusionVolume < config.preinfusionVolume ? PUMP_MIN_POWER : 0) * UINT8_MAX;
       }
       else
       {
-        pumpValue = (PUMP_MIN_POWER + min(1.0, (infusionTime - config.preinfusionDuration) / (double)PUMP_RAMPUP_TIME) * (config.pumpPower - PUMP_MIN_POWER)) * 255;
+        pumpValue = (PUMP_MIN_POWER + min(1.0, (infusionTime - config.preinfusionDuration) / (double)PUMP_RAMPUP_TIME) * (config.pumpPower - PUMP_MIN_POWER)) * UINT8_MAX;
       }
 
       dimmerSetLevel(pumpValue);
