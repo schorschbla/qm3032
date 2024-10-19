@@ -682,18 +682,30 @@ void processBt()
       }
       else
       {
-        float temp;
-        if (sscanf(buf, "set temp %f", &temp) > 0)
+        float value;
+        if (sscanf(buf, "set temp %f", &value) > 0)
         {
-          if (temp > 80 && temp < 98)
+          if (value > 80 && value < 98)
           {
-            config.temperature = temp;
+            config.temperature = value;
             writeConfig(config);
             setTemperature(config.temperature);
           }
           else
           {
             bt.printf("error range 80.0 98.0\n");
+          }
+        }
+        else if (sscanf(buf, "set pumpPower %f", &value) > 0)
+        {
+          if (value >= PUMP_MIN_POWER && value <= 1.0)
+          {
+            config.pumpPower = value;
+            writeConfig(config);
+          }
+          else
+          {
+            bt.printf("error range %f 1.0\n", PUMP_MIN_POWER);
           }
         }
       }
