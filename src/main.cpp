@@ -28,7 +28,7 @@
 
 #define TEMPERATURE_SAFETY_GUARD                    130
 
-#define STEAM_WATER_SUPPLY_THRESHOLD_TEMPERATURE    15
+#define STEAM_WATER_SUPPLY_MIN_TEMPERATURE    105
 
 #define TEMPERATURE_ARRIVAL_THRESHOLD     4
 #define TEMPERATURE_ARRIVAL_MINIMUM_TIME_BETWEEN_CHANGES     5000
@@ -683,6 +683,7 @@ void processBt()
       else
       {
         float value;
+        int intValue;
         if (sscanf(buf, "set temp %f", &value) > 0)
         {
           if (value > 80 && value < 98)
@@ -706,6 +707,18 @@ void processBt()
           else
           {
             bt.printf("error range %f 1.0\n", PUMP_MIN_POWER);
+          }
+        }
+        else if (sscanf(buf, "set steamWaterSupplyCycles %d", &intValue) > 0)
+        {
+          if (intValue >= 1 && value <= STEAM_CYCLE)
+          {
+            config.steamWaterSupplyCycles = intValue;
+            writeConfig(config);
+          }
+          else
+          {
+            bt.printf("error range 1 %d\n", STEAM_CYCLE);
           }
         }
       }
@@ -902,9 +915,9 @@ void loop()
   }
   else if (steam)
   {
-      if (cycle % STEAM_CYCLE == 0 && temperatureIs > config.steamTemperature - STEAM_WATER_SUPPLY_THRESHOLD_TEMPERATURE)
+      if (cycle % STEAM_CYCLE == 0 && temperatureIs > STEAM_WATER_SUPPLY_MIN_TEMPERATURE)
       {
-         dimmerSetLevel(220);
+         dimmerSetLevel(PUMP_MIN_POWER * UINT8_MAX);
       }
       else if (cycle % STEAM_CYCLE == config.steamWaterSupplyCycles)
       {
@@ -945,7 +958,7 @@ void loop()
 #else
       temperaturePid.Compute();
 #endif
-      if (steam && temperatureIs < config.steamTemperature - STEAM_WATER_SUPPLY_THRESHOLD_TEMPERATURE)
+      if (steam && temperatureIs < config.steamTemperature - 5.0)
       {
         pidOut = PID_MAX_OUTPUT;
       }
