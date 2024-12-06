@@ -24,6 +24,11 @@ unsigned int zeroCrossCount = 0;
 hw_timer_t *timer = NULL;
 
 
+unsigned int heatingCyclesSet = 0;
+
+unsigned int heatingCyclesIs = 0;
+
+
 void IRAM_ATTR ignite() {
     digitalWrite(PIN_TRIAC, HIGH);
 }
@@ -57,24 +62,35 @@ void IRAM_ATTR isr() {
     {
         digitalWrite(PIN_TRIAC, HIGH);
     }
+
+	if (heatingCyclesSet > heatingCyclesIs) 
+	{
+		heatingCyclesIs++;
+		digitalWrite(PIN_HEATING, HIGH);
+	}
+	else
+	{
+		digitalWrite(PIN_HEATING, LOW);
+	}
 }
 
-void dimmerBegin(uint8_t timerId) {
+void powerBegin(uint8_t timerId) {
 	pinMode(PIN_ZEROCROSS, INPUT_PULLDOWN);
 	attachInterrupt(PIN_ZEROCROSS, isr, RISING);
 
 	pinMode(PIN_TRIAC, OUTPUT);
+  	pinMode(PIN_HEATING, OUTPUT);
 
 	timer = timerBegin(timerId, 80, true);
 	timerAttachInterrupt(timer, &ignite, true);
 }
 
-void dimmerSetLevel(uint8_t level)
+void pumpSetLevel(uint8_t level)
 {
     cutOff = cutOfflinearizationLookup[255 - level];
 }
 
-unsigned short dimmerPhase()
+void requestHeatingCylces(unsigned int cycles)
 {
-    return (unsigned short) timerRead(timer);
+	heatingCyclesSet = heatingCyclesIs + cycles;
 }

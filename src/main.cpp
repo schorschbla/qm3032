@@ -13,7 +13,7 @@
 #include <vector>
 
 #include "gradient.h"
-#include "dimmer.h"
+#include "power.h"
 #include "display.h"
 
 //lv_font_conv  --no-compress --no-prefilter --bpp 4 --size 20 --font Montserrat-Medium.ttf -r 0x20-0x7f,0xdf,0xe4,0xf6,0xfc,0xc4,0xd6,0xdc,0xb0  --font FontAwesome5-Solid+Brands+Regular.woff -r 61441,61448,61451,61452,61452,61453,61457,61459,61461,61465,61468,61473,61478,61479,61480,61502,61507,61512,61515,61516,61517,61521,61522,61523,61524,61543,61544,61550,61552,61553,61556,61559,61560,61561,61563,61587,61589,61636,61637,61639,61641,61664,61671,61674,61683,61724,61732,61787,61931,62016,62017,62018,62019,62020,62087,62099,62212,62189,62810,63426,63650,62033 --format lvgl -o lv_font_montserrat_20.c --force-fast-kern-format
@@ -106,14 +106,6 @@ void getSplashImages()
         splashFiles.push_back(file);
       }
   }
-}
-
-extern void dimmerBegin(uint8_t timerId, uint8_t zeroCrossPin, uint8_t firstTriacPin, uint8_t secondTriacPin);
-extern unsigned int zeroCrossCount;
-extern void dimmerSetLevel(uint8_t channel, uint8_t level);
-
-void IRAM_ATTR switchOffHeating() {
-    digitalWrite(PIN_HEATING, LOW);
 }
 
 unsigned char splashBuf[256];
@@ -482,7 +474,6 @@ void setup()
   thermo.autoConvert(true);
   thermo.enableBias(true);
 
-  pinMode(PIN_HEATING, OUTPUT);
   pinMode(PIN_VALVE, OUTPUT);
 
 #ifdef PID_TEMPERATURE_AUTOTUNE
@@ -492,14 +483,11 @@ void setup()
   tuner.setZNMode(PIDAutotuner::ZNModeLessOvershoot);
 #endif
 
-	heatingTimer = timerBegin(1, 80, true);
-	timerAttachInterrupt(heatingTimer, &switchOffHeating, true);
-
   initStandbyUi();
   initInfuseUi();
   lv_scr_load(standbyScreen);
 
-  dimmerBegin(0);
+  powerBegin(0);
 
   SPIFFS.begin();
   getSplashImages();
@@ -521,17 +509,6 @@ void setup()
 
   bt.onConfirmRequest(BTIgnoreRequestCallback);
   bt.begin("Qm3032", false);
-}
-
-void heat(unsigned int durationMillis)
-{
-  if (durationMillis <= HEAT_CYCLE_LENGTH && temperatureIs < TEMPERATURE_SAFETY_GUARD)
-  {
-    timerRestart(heatingTimer);
-    timerAlarmWrite(heatingTimer, durationMillis * 1000, false);
-    digitalWrite(PIN_HEATING, HIGH);
-    timerAlarmEnable(heatingTimer);
-  }
 }
 
 unsigned long cycle = 0;
@@ -866,7 +843,7 @@ void loop()
       setPidTunings(PID_P, 0, 0);
       temperatureArrival = false;
 
-      dimmerSetLevel(0);
+      pumpSetLevel(0);
       valveDeadline = windowStart + 2000;
 
       currentSplashPos = 0;
@@ -898,7 +875,7 @@ void loop()
     else
     {
       setTemperature(config.temperature);
-      dimmerSetLevel(0);
+      pumpSetLevel(0);
       setPidTunings(PID_P, 0, 0);
       temperatureArrival = false;
       digitalWrite(PIN_VALVE, LOW);
@@ -921,17 +898,17 @@ void loop()
         pumpValue = (PUMP_MIN_POWER + min(1.0, (infusionTime - config.preinfusionDuration) / (double)PUMP_RAMPUP_TIME) * (config.pumpPower - PUMP_MIN_POWER)) * UINT8_MAX;
       }
 
-      dimmerSetLevel(pumpValue);
+      pumpSetLevel(pumpValue);
   }
   else if (steam)
   {
       if (cycle % STEAM_CYCLE == 0 && temperatureIs > STEAM_WATER_SUPPLY_MIN_TEMPERATURE)
       {
-         dimmerSetLevel(PUMP_MIN_POWER * UINT8_MAX);
+         pumpSetLevel(PUMP_MIN_POWER * UINT8_MAX);
       }
       else if (cycle % STEAM_CYCLE == config.steamWaterSupplyCycles)
       {
-         dimmerSetLevel(0);
+         pumpSetLevel(0);
       }
   }
 
@@ -950,35 +927,6 @@ void loop()
       bt.printf("temp %f\n", temperatureIs);
     }
 
-    if (cycle % (MAX31856_READ_INTERVAL_CYCLES * TEMPERATURE_PID_CYCLE_FACTOR) == 0)
-    { 
-#ifdef PID_TEMPERATURE_AUTOTUNE
-      if (infusing)
-      {
-        pidOut = infusionTuner.tunePID(temperatureIs, micros());
-      }
-      else if (steam)
-      {
-        pidOut = steamTuner.tunePID(temperatureIs, micros());
-      }
-      else
-      {
-        pidOut = tuner.tunePID(temperatureIs, micros());
-      }
-#else
-      temperaturePid.Compute();
-#endif
-      if (steam && temperatureIs < config.steamTemperature - 5.0)
-      {
-        pidOut = PID_MAX_OUTPUT;
-      }
-
-      if (pidOut > 0) 
-      {
-        heat(pidOut / PID_MAX_OUTPUT * HEAT_CYCLE_LENGTH);
-      }
-    }
-
     temperateAvg.push(temperatureIs);
 
     if (!steam && !infusing)
@@ -992,6 +940,35 @@ void loop()
         pidOut = temperatureIs = 0;
         setPidTunings(PID_P, arrival ? PID_I : 0, arrival ? PID_D : 0);
       } 
+    }
+  }
+
+  if (cycle % 25 == 0)
+  { 
+#ifdef PID_TEMPERATURE_AUTOTUNE
+    if (infusing)
+    {
+      pidOut = infusionTuner.tunePID(temperatureIs, micros());
+    }
+    else if (steam)
+    {
+      pidOut = steamTuner.tunePID(temperatureIs, micros());
+    }
+    else
+    {
+      pidOut = tuner.tunePID(temperatureIs, micros());
+    }
+#else
+    temperaturePid.Compute();
+#endif
+    if (steam && temperatureIs < config.steamTemperature - 5.0)
+    {
+      pidOut = PID_MAX_OUTPUT;
+    }
+
+    if (pidOut > 0) 
+    {
+      requestHeatingCylces(pidOut / PID_MAX_OUTPUT * 100);
     }
   }
 
