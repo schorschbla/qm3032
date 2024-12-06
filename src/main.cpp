@@ -153,6 +153,7 @@ lv_obj_t *infusePressureArc;
 lv_obj_t *infusePressureLabel;
 lv_obj_t *infuseTemperatureDiffArc;
 lv_obj_t *infuseTemperatureLabel;
+lv_obj_t *infuseVolumeLabel;
 
 lv_obj_t *pairingWaitScreen;
 lv_obj_t *pairingPinScreen;
@@ -209,20 +210,26 @@ void initInfuseUi()
   lv_obj_set_style_text_font(infusePressureLabel, &lv_font_montserrat_48, 0);
   lv_obj_set_width(infusePressureLabel, 150);
   lv_obj_set_style_text_align(infusePressureLabel, LV_TEXT_ALIGN_CENTER, 0);
-  lv_obj_align(infusePressureLabel, LV_ALIGN_CENTER, 0, -35);
+  lv_obj_align(infusePressureLabel, LV_ALIGN_CENTER, 0, -42);
 
   lv_obj_t *barLabel = lv_label_create(infuseScreen);
   lv_obj_set_style_text_font(barLabel, &lv_font_montserrat_20, 0);
   lv_obj_set_width(barLabel, 150);
   lv_obj_set_style_text_align(barLabel, LV_TEXT_ALIGN_CENTER, 0);
-  lv_obj_align(barLabel, LV_ALIGN_CENTER, 0, -70);
+  lv_obj_align(barLabel, LV_ALIGN_CENTER, 0, -76);
   lv_label_set_text_fmt(barLabel, "Bar");
+
+  infuseVolumeLabel = lv_label_create(infuseScreen);
+  lv_obj_set_style_text_font(infuseVolumeLabel, &lv_font_montserrat_36, 0);
+  lv_obj_set_width(infuseVolumeLabel, 150);
+  lv_obj_set_style_text_align(infuseVolumeLabel, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_align(infuseVolumeLabel, LV_ALIGN_CENTER, 0, 0);
 
   infuseTemperatureLabel = lv_label_create(infuseScreen);
   lv_obj_set_style_text_font(infuseTemperatureLabel, &lv_font_montserrat_48, 0);
   lv_obj_set_width(infuseTemperatureLabel, 150);
   lv_obj_set_style_text_align(infuseTemperatureLabel, LV_TEXT_ALIGN_CENTER, 0);
-  lv_obj_align(infuseTemperatureLabel, LV_ALIGN_CENTER, 0, 40);
+  lv_obj_align(infuseTemperatureLabel, LV_ALIGN_CENTER, 0, 44);
 }
 
 void initPairingUi()
@@ -591,6 +598,9 @@ void updateUi()
     lv_arc_set_angles(infusePressureArc, 0, displayedPressure / 16.0 * 250);
     lv_obj_set_style_arc_color(infusePressureArc, lv_color_hex(pressureGradient.getRgb(displayedPressure)), LV_PART_INDICATOR | LV_STATE_DEFAULT );
 
+
+    float volume = (flowCounter - flowCounterInfusionStart) * FLOW_ML_PER_TICK;
+    lv_label_set_text_fmt(infuseVolumeLabel, "%.1f ml", volume);
 
 /*
     temperatureOffsetDial.setValue(tempOffsetDialStart, tempOffsetDialAmount);
