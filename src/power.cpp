@@ -90,7 +90,7 @@ void pumpSetLevel(uint8_t level)
     leadingEdgeDelay = trailingEdgeDimmerLinearizationLookup[255 - level];
 }
 
-void requestHeatingCylces(unsigned int cycles, bool reset)
+void setHeatingCylces(unsigned int cycles, bool reset)
 {
 	heatingCyclesSet = (reset ? heatingCyclesIs : heatingCyclesSet) + cycles;
 }

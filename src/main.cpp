@@ -62,6 +62,10 @@
 
 #define PID_INTERVAL_CYCLES     25
 
+#define HEATING_ENERGY_PER_ML_AND_KELVIN_WATTSECONDS   5.76
+#define COLD_WATER_TEMPERATURE_DEGRESS   20
+#define HEATING_OUTPUT_WATTS  1000
+
 unsigned int const heatGradient[] = { 0x7f7f7f, 0x0000ff, 0x00a591, 0x00ff00, 0xffff00, 0xff0000 };
 static float pressureHeatWeights[] = { 1.0f, 7.0f, 4.0f, 2.0f, 1.0f };
 static float temperatureHeatWeights[] = { 5.0f, 85.0f, 10.0f, 2.0f, 3.0f };
@@ -521,6 +525,7 @@ unsigned int lastTemperatureArrivalChange = 0;
 
 unsigned int flowCounterInfusionStart;
 
+unsigned int infusionHeatingCyclesIs;
 
 void updateUi()
 {
@@ -772,8 +777,6 @@ void loop()
       infusionTuner.setZNMode(PIDAutotuner::ZNModeBasicPID);
       infusionTuner.startTuningLoop(micros());
 #endif
-
-      setPidTunings(PID_P_INFUSE, PID_I_INFUSE, PID_D_INFUSE);
       digitalWrite(PIN_VALVE_POWER, HIGH);
       valveDeadline = 0;
 
@@ -785,11 +788,15 @@ void loop()
       else
       {
         infuseStart = windowStart;
-        flowCounterInfusionStart = flowCounter;
       }
+
+      flowCounterInfusionStart = flowCounter;
+      infusionHeatingCyclesIs = 0;
    }
     else
     {
+      setHeatingCylces(0);
+
       setTemperature(config.temperature);
       setPidTunings(PID_P, 0, 0);
       temperatureArrival = false;
@@ -884,7 +891,7 @@ void loop()
     }
   }
 
-  if (cycle % PID_INTERVAL_CYCLES == 0)
+  if (cycle % PID_INTERVAL_CYCLES == 0 && !infusing)
   { 
 #ifdef PID_TEMPERATURE_AUTOTUNE
     if (infusing)
@@ -909,7 +916,7 @@ void loop()
 
     if (pidOut > 0) 
     {
-      requestHeatingCylces(pidOut / PID_MAX_OUTPUT * (PID_INTERVAL_CYCLES * CYCLE_LENGTH / HEATING_CYCLE_LENGTH));
+      setHeatingCylces(pidOut / PID_MAX_OUTPUT * (PID_INTERVAL_CYCLES * CYCLE_LENGTH / HEATING_CYCLE_LENGTH));
     }
   }
 
@@ -929,6 +936,19 @@ void loop()
     float flow = (currentFlowCounter - lastFlowCounter) * FLOW_ML_PER_TICK / (FLOW_PROCESS_INTERVAL_CYCLES * CYCLE_LENGTH / 1000.0);
     flowAvg.push(flow);
     lastFlowCounter = currentFlowCounter;
+
+    if (infusing)
+    {
+        float infusionVolume = (currentFlowCounter - flowCounterInfusionStart) * FLOW_ML_PER_TICK;
+        float heatingEnergy = infusionVolume * (config.temperature - COLD_WATER_TEMPERATURE_DEGRESS) * HEATING_ENERGY_PER_ML_AND_KELVIN_WATTSECONDS;
+        unsigned int heatingCyclesSet = heatingEnergy / HEATING_OUTPUT_WATTS * 1000 / HEATING_CYCLE_LENGTH;
+        if (heatingCyclesSet > infusionHeatingCyclesIs) 
+        {
+          Serial.printf("time %d volume %.1fml energy %.1fws cycles %d\n", windowStart - infuseStart, infusionVolume, heatingEnergy, heatingCyclesSet - infusionHeatingCyclesIs);
+          setHeatingCylces(heatingCyclesSet - infusionHeatingCyclesIs, false);
+          infusionHeatingCyclesIs = heatingCyclesSet;
+        }
+    }
   }
 
   if (eTaskGetState(lvglUpdateTask) == eTaskState::eSuspended)
