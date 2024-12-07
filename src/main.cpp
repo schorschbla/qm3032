@@ -49,11 +49,10 @@
 
 #define CYCLE_LENGTH                      40
 #define MAX31856_READ_INTERVAL_CYCLES     2
-#define TEMPERATURE_PID_CYCLE_FACTOR      6
 
 #define STEAM_CYCLE                       32
 
-#define FLOW_CYCLES                       5
+#define FLOW_PROCESS_INTERVAL_CYCLES      1
 #define FLOW_ML_PER_TICK                  0.05
 
 #define SPLASH_IMAGE_DURATION             10000
@@ -61,7 +60,7 @@
 #define MAX31865_RREF      430.0
 #define MAX31865_RNOMINAL  100.0
 
-#define HEATING_CONTROL_WINDOW_CYCLES     25
+#define PID_INTERVAL_CYCLES     25
 
 unsigned int const heatGradient[] = { 0x7f7f7f, 0x0000ff, 0x00a591, 0x00ff00, 0xffff00, 0xff0000 };
 static float pressureHeatWeights[] = { 1.0f, 7.0f, 4.0f, 2.0f, 1.0f };
@@ -132,7 +131,7 @@ void setPidTunings(double Kp, double Ki, double Kd)
   temperatureIs = 0;
   temperaturePid = PID(&temperatureIs, &pidOut, &temperatureSet, Kp, Ki, Kd, DIRECT);
   temperaturePid.SetOutputLimits(0, PID_MAX_OUTPUT);
-  temperaturePid.SetSampleTime(HEATING_CONTROL_WINDOW_CYCLES * CYCLE_LENGTH);
+  temperaturePid.SetSampleTime(PID_INTERVAL_CYCLES * CYCLE_LENGTH);
   temperaturePid.SetMode(AUTOMATIC);
 }
 
@@ -943,7 +942,7 @@ void loop()
     }
   }
 
-  if (cycle % HEATING_CONTROL_WINDOW_CYCLES == 0)
+  if (cycle % PID_INTERVAL_CYCLES == 0)
   { 
 #ifdef PID_TEMPERATURE_AUTOTUNE
     if (infusing)
@@ -968,7 +967,7 @@ void loop()
 
     if (pidOut > 0) 
     {
-      requestHeatingCylces(pidOut / PID_MAX_OUTPUT * (HEATING_CONTROL_WINDOW_CYCLES * CYCLE_LENGTH / HEATING_CYCLE_LENGTH));
+      requestHeatingCylces(pidOut / PID_MAX_OUTPUT * (PID_INTERVAL_CYCLES * CYCLE_LENGTH / HEATING_CYCLE_LENGTH));
     }
   }
 
@@ -982,10 +981,10 @@ void loop()
     }
   }
 
-  if (cycle % FLOW_CYCLES == 0)
+  if (cycle % FLOW_PROCESS_INTERVAL_CYCLES == 0)
   {
     unsigned int currentFlowCounter = flowCounter;
-    float flow = (currentFlowCounter - lastFlowCounter) * FLOW_ML_PER_TICK / (FLOW_CYCLES * CYCLE_LENGTH / 1000.0);
+    float flow = (currentFlowCounter - lastFlowCounter) * FLOW_ML_PER_TICK / (FLOW_PROCESS_INTERVAL_CYCLES * CYCLE_LENGTH / 1000.0);
     flowAvg.push(flow);
     lastFlowCounter = currentFlowCounter;
   }
