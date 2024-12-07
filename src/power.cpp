@@ -1,6 +1,6 @@
 #include <Arduino.h>
 
-unsigned short cutOfflinearizationLookup[] = {
+unsigned short trailingEdgeDimmerLinearizationLookup[] = {
 	0,     398,  564,  691,  799,  894,  980, 1059, 1133, 1203, 1269, 1331, 1392, 1449, 1505, 1559, 
 	1611, 1662, 1711, 1760, 1807, 1852, 1897, 1941, 1985, 2027, 2069, 2109, 2150, 2189, 2228, 2267, 
 	2305, 2342, 2379, 2416, 2452, 2487, 2523, 2557, 2592, 2626, 2660, 2693, 2727, 2759, 2792, 2824, 
@@ -30,47 +30,47 @@ unsigned int heatingCyclesIs = 0;
 
 
 void IRAM_ATTR ignite() {
-    digitalWrite(PIN_TRIAC, HIGH);
+    digitalWrite(PIN_PUMP_POWER, HIGH);
 }
 
-unsigned short cutOff = 10000;
+unsigned short leadingEdgeDelay = 10000;
 
-unsigned long lastZeroTime = 0;
+unsigned long lastZeroCrossTime = 0;
 
 
 void IRAM_ATTR isr() {
 	unsigned long time = micros();
-	if (lastZeroTime > 0 && time - lastZeroTime < 9000)
+	if (lastZeroCrossTime > 0 && time - lastZeroCrossTime < 9000)
     {
         return;
     }
 
-    lastZeroTime = time;
+    lastZeroCrossTime = time;
 
     timerRestart(timer);
 
-    if (cutOff != 0)
+    if (leadingEdgeDelay != 0)
     {
-        digitalWrite(PIN_TRIAC, LOW);
-        if (cutOff < 10000)
+        digitalWrite(PIN_PUMP_POWER, LOW);
+        if (leadingEdgeDelay < 10000)
         {
-            timerAlarmWrite(timer, cutOff, false);
+            timerAlarmWrite(timer, leadingEdgeDelay, false);
             timerAlarmEnable(timer);
         }
     }
     else
     {
-        digitalWrite(PIN_TRIAC, HIGH);
+        digitalWrite(PIN_PUMP_POWER, HIGH);
     }
 
 	if (heatingCyclesSet > heatingCyclesIs) 
 	{
 		heatingCyclesIs++;
-		digitalWrite(PIN_HEATING, HIGH);
+		digitalWrite(PIN_HEATING_POWER, HIGH);
 	}
 	else
 	{
-		digitalWrite(PIN_HEATING, LOW);
+		digitalWrite(PIN_HEATING_POWER, LOW);
 	}
 }
 
@@ -78,8 +78,8 @@ void powerBegin(uint8_t timerId) {
 	pinMode(PIN_ZEROCROSS, INPUT_PULLDOWN);
 	attachInterrupt(PIN_ZEROCROSS, isr, RISING);
 
-	pinMode(PIN_TRIAC, OUTPUT);
-  	pinMode(PIN_HEATING, OUTPUT);
+	pinMode(PIN_PUMP_POWER, OUTPUT);
+  	pinMode(PIN_HEATING_POWER, OUTPUT);
 
 	timer = timerBegin(timerId, 80, true);
 	timerAttachInterrupt(timer, &ignite, true);
@@ -87,10 +87,10 @@ void powerBegin(uint8_t timerId) {
 
 void pumpSetLevel(uint8_t level)
 {
-    cutOff = cutOfflinearizationLookup[255 - level];
+    leadingEdgeDelay = trailingEdgeDimmerLinearizationLookup[255 - level];
 }
 
-void requestHeatingCylces(unsigned int cycles)
+void requestHeatingCylces(unsigned int cycles, bool reset)
 {
-	heatingCyclesSet = heatingCyclesIs + cycles;
+	heatingCyclesSet = (reset ? heatingCyclesIs : heatingCyclesSet) + cycles;
 }

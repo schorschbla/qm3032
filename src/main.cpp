@@ -472,7 +472,7 @@ void setup()
   thermo.autoConvert(true);
   thermo.enableBias(true);
 
-  pinMode(PIN_VALVE, OUTPUT);
+  pinMode(PIN_VALVE_POWER, OUTPUT);
 
 #ifdef PID_TEMPERATURE_AUTOTUNE
   tuner.setTargetInputValue(temperatureSet);
@@ -774,7 +774,7 @@ void loop()
 #endif
 
       setPidTunings(PID_P_INFUSE, PID_I_INFUSE, PID_D_INFUSE);
-      digitalWrite(PIN_VALVE, HIGH);
+      digitalWrite(PIN_VALVE_POWER, HIGH);
       valveDeadline = 0;
 
       // Skip prefusion if infusion is turned on repeatedly 
@@ -817,7 +817,7 @@ void loop()
 
       setTemperature(config.steamTemperature);
       setPidTunings(PID_P_STEAM, PID_I_STEAM, PID_D_STEAM);
-      digitalWrite(PIN_VALVE, HIGH);
+      digitalWrite(PIN_VALVE_POWER, HIGH);
       valveDeadline = 0;
     }
     else
@@ -826,7 +826,7 @@ void loop()
       pumpSetLevel(0);
       setPidTunings(PID_P, 0, 0);
       temperatureArrival = false;
-      digitalWrite(PIN_VALVE, LOW);
+      digitalWrite(PIN_VALVE_POWER, LOW);
     }
   }
 
@@ -860,7 +860,7 @@ void loop()
 
   if (valveDeadline != 0 && windowStart > valveDeadline) 
   {
-    digitalWrite(PIN_VALVE, LOW);
+    digitalWrite(PIN_VALVE_POWER, LOW);
   }
 
   if (cycle % MAX31856_READ_INTERVAL_CYCLES == 0)
