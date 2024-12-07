@@ -353,7 +353,6 @@ void lvglUpdateTaskFunc(void *parameter)
     }
 
     lv_timer_handler();
-    //Serial.printf("Update duration: %d\n", millis() - start);
   }
 }
 
@@ -577,21 +576,6 @@ void updateUi()
 
     float volume = (flowCounter - flowCounterInfusionStart) * FLOW_ML_PER_TICK;
     lv_label_set_text_fmt(infuseVolumeLabel, "%.1f ml", volume);
-
-/*
-    temperatureOffsetDial.setValue(tempOffsetDialStart, tempOffsetDialAmount);
-    temperatureOffsetDial.setColor(tft.color24to16(tempGradient.getRgb(temperatureAvgDegree)));
-    temperatureOffsetDial.draw(tft);
-
-    if (cycle % (MAX31856_READ_INTERVAL_CYCLES * 4) == 0)
-    {
-      tft.setTextDatum(TC_DATUM);
-      int padding = tft.textWidth("00.0");
-      tft.setTextPadding(padding);
-      int sanitizedTemp = (int) temperatureAvgDegree;
-      tft.drawFloat(temperatureAvgDegree, temperatureAvgDegree > 99.9 ? 0 : 1, 120, 159);    
-    }
-*/
   }
   else
   {
@@ -616,36 +600,6 @@ void updateUi()
     lv_obj_set_style_arc_color(standbyTemperatureArc, lv_color_hex(tempGradient.getRgb(temperatureAvgDegree)), LV_PART_INDICATOR | LV_STATE_DEFAULT );
   }
 }
-
-/*
-void updateUiPressure()
-{
-  if (infusing || steam)
-  {
-    float displayedPressure = max(0.0f, pressureAvg.get());
-
-    tft.setTextDatum(TC_DATUM);
-    int padding = tft.textWidth("00.0");
-    tft.setTextPadding(padding);
-    tft.drawFloat(displayedPressure, 1, 120, 50);
-
-    mainDial.setValue(70, min(220, (int)(220 * displayedPressure / 16.0)));
-    mainDial.setColor(tft.color24to16(pressureGradient.getRgb(displayedPressure)));
-    mainDial.draw(tft);
-  }
-}
-
-void updateUiFlow()
-{
-  if (infusing || steam)
-  {
-      tft.setTextDatum(TC_DATUM);
-      int padding = tft.textWidth("0.0");
-      tft.setTextPadding(padding);
-      tft.drawFloat(flowAvg.get(), 1, 120, 105);
-  }
-}
-*/
 
 void processBt()
 {
@@ -833,8 +787,6 @@ void loop()
         infuseStart = windowStart;
         flowCounterInfusionStart = flowCounter;
       }
-
-      //initUiInfuse(tft);
    }
     else
     {
@@ -846,7 +798,6 @@ void loop()
       valveDeadline = windowStart + 2000;
 
       currentSplashPos = 0;
-      //initUiStandby(tft);
     }
   }
 
@@ -868,8 +819,6 @@ void loop()
       setPidTunings(PID_P_STEAM, PID_I_STEAM, PID_D_STEAM);
       digitalWrite(PIN_VALVE, HIGH);
       valveDeadline = 0;
-
-      //initUiInfuse(tft);
     }
     else
     {
@@ -878,8 +827,6 @@ void loop()
       setPidTunings(PID_P, 0, 0);
       temperatureArrival = false;
       digitalWrite(PIN_VALVE, LOW);
-
-      //initUiStandby(tft);
     }
   }
 
