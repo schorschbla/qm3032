@@ -61,7 +61,7 @@
 #define MAX31865_RREF      430.0
 #define MAX31865_RNOMINAL  100.0
 
-#define HEAT_CYCLE_LENGTH (MAX31856_READ_INTERVAL_CYCLES * TEMPERATURE_PID_CYCLE_FACTOR * CYCLE_LENGTH)
+#define HEATING_CONTROL_WINDOW_CYCLES     25
 
 unsigned int const heatGradient[] = { 0x7f7f7f, 0x0000ff, 0x00a591, 0x00ff00, 0xffff00, 0xff0000 };
 static float pressureHeatWeights[] = { 1.0f, 7.0f, 4.0f, 2.0f, 1.0f };
@@ -132,7 +132,7 @@ void setPidTunings(double Kp, double Ki, double Kd)
   temperatureIs = 0;
   temperaturePid = PID(&temperatureIs, &pidOut, &temperatureSet, Kp, Ki, Kd, DIRECT);
   temperaturePid.SetOutputLimits(0, PID_MAX_OUTPUT);
-  temperaturePid.SetSampleTime(HEAT_CYCLE_LENGTH);
+  temperaturePid.SetSampleTime(HEATING_CONTROL_WINDOW_CYCLES * CYCLE_LENGTH);
   temperaturePid.SetMode(AUTOMATIC);
 }
 
@@ -943,7 +943,7 @@ void loop()
     }
   }
 
-  if (cycle % 25 == 0)
+  if (cycle % HEATING_CONTROL_WINDOW_CYCLES == 0)
   { 
 #ifdef PID_TEMPERATURE_AUTOTUNE
     if (infusing)
@@ -968,7 +968,7 @@ void loop()
 
     if (pidOut > 0) 
     {
-      requestHeatingCylces(pidOut / PID_MAX_OUTPUT * 100);
+      requestHeatingCylces(pidOut / PID_MAX_OUTPUT * (HEATING_CONTROL_WINDOW_CYCLES * CYCLE_LENGTH / HEATING_CYCLE_LENGTH));
     }
   }
 
