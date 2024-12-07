@@ -50,7 +50,7 @@
 #define CYCLE_LENGTH                      40
 #define MAX31856_READ_INTERVAL_CYCLES     2
 
-#define STEAM_CYCLE                       32
+#define STEAM_PULSATOR_INTERVAL_CYCLES    32
 
 #define FLOW_PROCESS_INTERVAL_CYCLES      1
 #define FLOW_ML_PER_TICK                  0.05
@@ -651,14 +651,14 @@ void processBt()
         }
         else if (sscanf(buf, "set steamWaterSupplyCycles %d", &intValue) > 0)
         {
-          if (intValue >= 1 && value <= STEAM_CYCLE)
+          if (intValue >= 1 && value <= STEAM_PULSATOR_INTERVAL_CYCLES)
           {
             config.steamWaterSupplyCycles = intValue;
             writeConfig(config);
           }
           else
           {
-            bt.printf("error range 1 %d\n", STEAM_CYCLE);
+            bt.printf("error range 1 %d\n", STEAM_PULSATOR_INTERVAL_CYCLES);
           }
         }
       }
@@ -848,11 +848,11 @@ void loop()
   }
   else if (steam)
   {
-      if (cycle % STEAM_CYCLE == 0 && temperatureIs > STEAM_WATER_SUPPLY_MIN_TEMPERATURE)
+      if (cycle % STEAM_PULSATOR_INTERVAL_CYCLES == 0 && temperatureIs > STEAM_WATER_SUPPLY_MIN_TEMPERATURE)
       {
          pumpSetLevel(PUMP_MIN_POWER * UINT8_MAX);
       }
-      else if (cycle % STEAM_CYCLE == config.steamWaterSupplyCycles)
+      else if (cycle % STEAM_PULSATOR_INTERVAL_CYCLES == config.steamWaterSupplyCycles)
       {
          pumpSetLevel(0);
       }
