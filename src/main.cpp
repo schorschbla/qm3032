@@ -920,11 +920,6 @@ void loop()
   {
     temperatureIs = thermo.calculateTemperature(thermo.readRTDCont(), MAX31865_RNOMINAL, MAX31865_RREF);
     int temperatureIsInt = (int)(temperatureIs * 10);
-    
-    if (cycle % (MAX31856_READ_INTERVAL_CYCLES * 10) == 0 && bt.connected())
-    {
-      bt.printf("temp %f\n", temperatureIs);
-    }
 
     temperateAvg.push(temperatureIs);
 
