@@ -41,7 +41,7 @@
 #define PID_I_STEAM                       0.31
 #define PID_D_STEAM                       145
 
-#define PUMP_RAMPUP_TIME                  7000
+#define PUMP_RAMPUP_TIME                  4000
 #define PUMP_MIN_POWER                    0.6
 
 #define XDB401_MAX_BAR                    20
@@ -63,7 +63,6 @@
 #define PID_INTERVAL_CYCLES     25
 
 #define HEATING_ENERGY_PER_ML_AND_KELVIN_WATTSECONDS   5.76
-#define COLD_WATER_TEMPERATURE_DEGRESS   20
 #define HEATING_OUTPUT_WATTS  1000
 
 unsigned int const heatGradient[] = { 0x7f7f7f, 0x0000ff, 0x00a591, 0x00ff00, 0xffff00, 0xff0000 };
@@ -370,6 +369,7 @@ struct Qm3032Config
 {
   uint16_t version;
   float temperature;
+  float waterTemperature;
   float pumpPower;
   float preinfusionVolume;
   uint16_t preinfusionDuration;
@@ -377,7 +377,7 @@ struct Qm3032Config
   uint8_t steamWaterSupplyCycles;
 };
 
-struct Qm3032Config defaultConfig = { 1, 88.0, 0.8, 5.0, 8000, 125.0, 2 };
+struct Qm3032Config defaultConfig = { 1, 87.0, 20.0, 0.8, 5.0, 5000, 125.0, 2 };
 
 bool readConfig(struct Qm3032Config &config)
 {
@@ -622,8 +622,8 @@ void processBt()
       
       if (!strcmp("get config", buf))
       {
-        bt.printf("temp %f pumpPower %f steamTemp %f steamWaterSupplyCycles %d preinfusionVolume %f preinfusionDuration %d\n", 
-          config.temperature, config.pumpPower, config.steamTemperature, config.steamWaterSupplyCycles, config.preinfusionVolume, config.preinfusionDuration);
+        bt.printf("temp %f waterTemp %f pumpPower %f steamTemp %f steamWaterSupplyCycles %d preinfusionVolume %f preinfusionDuration %d\n", 
+          config.temperature, config.waterTemperature, config.pumpPower, config.steamTemperature, config.steamWaterSupplyCycles, config.preinfusionVolume, config.preinfusionDuration);
       }
       else
       {
@@ -664,6 +664,30 @@ void processBt()
           else
           {
             bt.printf("error range 1 %d\n", STEAM_PULSATOR_INTERVAL_CYCLES);
+          }
+        }
+        else if (sscanf(buf, "set preinfusionDuration %d", &intValue) > 0)
+        {
+          if (intValue >= 0 && value <= 10000)
+          {
+            config.preinfusionDuration = intValue;
+            writeConfig(config);
+          }
+          else
+          {
+            bt.printf("error range 0 %d\n", 10000);
+          }
+        }
+        else if (sscanf(buf, "set waterTemp %f", &value) > 0)
+        {
+          if (value >= 5.0 && value <= 40.)
+          {
+            config.waterTemperature = value;
+            writeConfig(config);
+          }
+          else
+          {
+            bt.printf("error range %f %f\n", 5.0, 40.0);
           }
         }
       }
@@ -779,17 +803,7 @@ void loop()
 #endif
       digitalWrite(PIN_VALVE_POWER, HIGH);
       valveDeadline = 0;
-
-      // Skip prefusion if infusion is turned on repeatedly 
-      if (infuseStart > windowStart - 2000)
-      {
-        infuseStart = windowStart - config.preinfusionDuration;
-      }
-      else
-      {
-        infuseStart = windowStart;
-      }
-
+      infuseStart = windowStart;
       flowCounterInfusionStart = flowCounter;
       infusionHeatingCyclesIs = 0;
    }
@@ -839,19 +853,27 @@ void loop()
 
   if (infusing)
   {
-      unsigned char pumpValue;
+      float pumpValue;
       unsigned int infusionTime = windowStart - infuseStart;
-      float infusionVolume = (flowCounter - flowCounterInfusionStart) * FLOW_ML_PER_TICK;
+      //float infusionVolume = (flowCounter - flowCounterInfusionStart) * FLOW_ML_PER_TICK;
       if (infusionTime < config.preinfusionDuration)
       {
-        pumpValue = (infusionVolume < config.preinfusionVolume ? PUMP_MIN_POWER : 0) * UINT8_MAX;
+        pumpValue = PUMP_MIN_POWER;
       }
       else
       {
-        pumpValue = (PUMP_MIN_POWER + min(1.0, (infusionTime - config.preinfusionDuration) / (double)PUMP_RAMPUP_TIME) * (config.pumpPower - PUMP_MIN_POWER)) * UINT8_MAX;
+        infusionTime -= config.preinfusionDuration;
+        if (infusionTime < PUMP_RAMPUP_TIME)
+        {
+          pumpValue = PUMP_MIN_POWER + (float)(infusionTime) / PUMP_RAMPUP_TIME * (config.pumpPower - PUMP_MIN_POWER);
+        }
+        else
+        {
+          pumpValue = config.pumpPower;
+        }
       }
 
-      pumpSetLevel(pumpValue);
+      pumpSetLevel(pumpValue * UINT8_MAX);
   }
   else if (steam)
   {
@@ -940,7 +962,7 @@ void loop()
     if (infusing)
     {
         float infusionVolume = (currentFlowCounter - flowCounterInfusionStart) * FLOW_ML_PER_TICK;
-        float heatingEnergy = infusionVolume * (config.temperature - COLD_WATER_TEMPERATURE_DEGRESS) * HEATING_ENERGY_PER_ML_AND_KELVIN_WATTSECONDS;
+        float heatingEnergy = infusionVolume * (config.temperature - config.waterTemperature) * HEATING_ENERGY_PER_ML_AND_KELVIN_WATTSECONDS;
         unsigned int heatingCyclesSet = heatingEnergy / HEATING_OUTPUT_WATTS * 1000 / HEATING_CYCLE_LENGTH;
         if (heatingCyclesSet > infusionHeatingCyclesIs) 
         {
