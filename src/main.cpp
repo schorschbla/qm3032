@@ -54,7 +54,7 @@
 #define STEAM_PULSATOR_INTERVAL_CYCLES    32
 
 #define FLOW_PROCESS_INTERVAL_CYCLES      1
-#define FLOW_ML_PER_TICK                  0.05
+#define FLOW_ML_PER_TICK                  0.1
 
 #define SPLASH_IMAGE_DURATION             10000
 
@@ -437,7 +437,7 @@ pcnt_config_t flowMeterPcntConfig = {
     .pulse_gpio_num = PIN_FLOW_METER,
     .ctrl_gpio_num = -1,
     .pos_mode = PCNT_COUNT_INC,
-    .neg_mode = PCNT_COUNT_INC,
+    .neg_mode = PCNT_COUNT_DIS,
     .unit = FLOW_METER_PCNT_UNIT,
     .channel = PCNT_CHANNEL_0
 };
