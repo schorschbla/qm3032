@@ -76,7 +76,7 @@ Display display;
 SPIClass hspi(HSPI);
 Adafruit_MAX31865 thermo(PIN_MAX31865_SELECT, &hspi);
 
-DataTomeMvAvg<float, double> temperateAvg(20), pressureAvg(25), flowAvg(10);
+DataTomeMvAvg<float, double> temperateAvg(20), pressureAvg(25), flowAvg(10), pidAvg(10);
 
 double temperatureSet, temperatureIs, pidOut;
 
@@ -527,6 +527,8 @@ unsigned int flowCounterInfusionStart;
 
 unsigned int infusionHeatingCyclesIs;
 
+float infusionConstantHeatingPower;
+
 void updateUi()
 {
   float temperatureAvgDegree = temperateAvg.get();
@@ -690,6 +692,18 @@ void processBt()
             bt.printf("error range %f %f\n", 5.0, 40.0);
           }
         }
+        else if (sscanf(buf, "set preinfusionVolume %f", &value) > 0)
+        {
+          if (value >= 0.0 && value <= 20.0)
+          {
+            config.preinfusionVolume = value;
+            writeConfig(config);
+          }
+          else
+          {
+            bt.printf("error range %f %f\n", 0.0, 20.0);
+          }
+        }
       }
     }
   }
@@ -806,6 +820,8 @@ void loop()
       infuseStart = windowStart;
       flowCounterInfusionStart = flowCounter;
       infusionHeatingCyclesIs = 0;
+
+      infusionConstantHeatingPower = abs(temperatureIs - config.temperature) < TEMPERATURE_ARRIVAL_THRESHOLD ? pidAvg.get() : 0.0;
    }
     else
     {
@@ -855,10 +871,17 @@ void loop()
   {
       float pumpValue;
       unsigned int infusionTime = windowStart - infuseStart;
-      //float infusionVolume = (flowCounter - flowCounterInfusionStart) * FLOW_ML_PER_TICK;
       if (infusionTime < config.preinfusionDuration)
       {
         pumpValue = PUMP_MIN_POWER;
+        if (config.preinfusionVolume > 0)
+        {
+          float infusionVolume = (flowCounter - flowCounterInfusionStart) * FLOW_ML_PER_TICK;
+          if (infusionVolume > config.preinfusionVolume)
+          {
+            pumpValue = 0.0;
+          }
+        }
       }
       else
       {
@@ -913,32 +936,49 @@ void loop()
     }
   }
 
-  if (cycle % PID_INTERVAL_CYCLES == 0 && !infusing)
-  { 
-#ifdef PID_TEMPERATURE_AUTOTUNE
+  if (cycle % PID_INTERVAL_CYCLES == 0)
+  {
     if (infusing)
     {
-      pidOut = infusionTuner.tunePID(temperatureIs, micros());
-    }
-    else if (steam)
-    {
-      pidOut = steamTuner.tunePID(temperatureIs, micros());
+      if (infusionConstantHeatingPower > 0)
+      {
+        setHeatingCylces(infusionConstantHeatingPower / PID_MAX_OUTPUT * (PID_INTERVAL_CYCLES * CYCLE_LENGTH / HEATING_CYCLE_LENGTH), false);
+      }
     }
     else
     {
-      pidOut = tuner.tunePID(temperatureIs, micros());
-    }
+#ifdef PID_TEMPERATURE_AUTOTUNE
+      if (infusing)
+      {
+        pidOut = infusionTuner.tunePID(temperatureIs, micros());
+      }
+      else if (steam)
+      {
+        pidOut = steamTuner.tunePID(temperatureIs, micros());
+      }
+      else
+      {
+        pidOut = tuner.tunePID(temperatureIs, micros());
+      }
 #else
-    temperaturePid.Compute();
+      temperaturePid.Compute();
 #endif
-    if (steam && temperatureIs < config.steamTemperature - 5.0)
-    {
-      pidOut = PID_MAX_OUTPUT;
-    }
+      if (steam)
+      {
+        if (temperatureIs < config.steamTemperature - 5.0)
+        {
+          pidOut = PID_MAX_OUTPUT;
+        }
+      }
+      else
+      {
+        pidAvg.push(pidOut);
+      }
 
-    if (pidOut > 0) 
-    {
-      setHeatingCylces(pidOut / PID_MAX_OUTPUT * (PID_INTERVAL_CYCLES * CYCLE_LENGTH / HEATING_CYCLE_LENGTH));
+      if (pidOut > 0) 
+      {
+        setHeatingCylces(pidOut / PID_MAX_OUTPUT * (PID_INTERVAL_CYCLES * CYCLE_LENGTH / HEATING_CYCLE_LENGTH));
+      }
     }
   }
 
@@ -966,7 +1006,6 @@ void loop()
         unsigned int heatingCyclesSet = heatingEnergy / HEATING_OUTPUT_WATTS * 1000 / HEATING_CYCLE_LENGTH;
         if (heatingCyclesSet > infusionHeatingCyclesIs) 
         {
-          Serial.printf("time %d volume %.1fml energy %.1fws cycles %d\n", windowStart - infuseStart, infusionVolume, heatingEnergy, heatingCyclesSet - infusionHeatingCyclesIs);
           setHeatingCylces(heatingCyclesSet - infusionHeatingCyclesIs, false);
           infusionHeatingCyclesIs = heatingCyclesSet;
         }
