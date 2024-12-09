@@ -7,6 +7,7 @@
 #include <SPIFFS.h>
 #include <PID_v1.h>
 #include <pidautotuner.h>
+#include <driver/pcnt.h>
 
 #include "BluetoothSerial.h"
 
@@ -123,10 +124,6 @@ extern void ReadRegs();
 unsigned int flowCounter = 0;
 
 unsigned int lastFlowCounter = 0;
-
-void IRAM_ATTR incrementFlowCounter() {
-    flowCounter++;
-}
 
 void setPidTunings(double Kp, double Ki, double Kd)
 {
@@ -434,6 +431,17 @@ uint32_t pairingState = 0;
 
 Qm3032Config config;
 
+#define FLOW_METER_PCNT_UNIT  PCNT_UNIT_0
+
+pcnt_config_t flowMeterPcntConfig = {
+    .pulse_gpio_num = PIN_FLOW_METER,
+    .ctrl_gpio_num = -1,
+    .pos_mode = PCNT_COUNT_INC,
+    .neg_mode = PCNT_COUNT_INC,
+    .unit = FLOW_METER_PCNT_UNIT,
+    .channel = PCNT_CHANNEL_0
+};
+
 void setup()
 {
   Serial.begin(9600);
@@ -465,7 +473,7 @@ void setup()
   }
 
 	pinMode(15, INPUT_PULLDOWN);
-	attachInterrupt(15, incrementFlowCounter, CHANGE);
+	pcnt_unit_config(&flowMeterPcntConfig);
 
   Wire.begin();
 
@@ -511,6 +519,9 @@ void setup()
 
   bt.onConfirmRequest(BTIgnoreRequestCallback);
   bt.begin("Qm3032", false);
+
+  pcnt_counter_clear(FLOW_METER_PCNT_UNIT);
+  pcnt_counter_resume(FLOW_METER_PCNT_UNIT);
 }
 
 unsigned long cycle = 0;
@@ -801,6 +812,12 @@ void loop()
     loopPairing();
     return;
   }
+
+  int16_t cycleFlowCount;
+  pcnt_get_counter_value(FLOW_METER_PCNT_UNIT, &cycleFlowCount);
+  pcnt_counter_clear(FLOW_METER_PCNT_UNIT);
+
+  flowCounter += cycleFlowCount;
 
   if (!steam && digitalRead(PIN_INFUSE_SWITCH) != infusing)
   {
