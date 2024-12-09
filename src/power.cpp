@@ -30,7 +30,7 @@ unsigned int heatingCyclesIs = 0;
 
 
 void IRAM_ATTR ignite() {
-    digitalWrite(PIN_PUMP_POWER, HIGH);
+    digitalWrite(PIN_PUMP_AC, HIGH);
 }
 
 unsigned short leadingEdgeDelay = 10000;
@@ -51,7 +51,7 @@ void IRAM_ATTR isr() {
 
     if (leadingEdgeDelay != 0)
     {
-        digitalWrite(PIN_PUMP_POWER, LOW);
+        digitalWrite(PIN_PUMP_AC, LOW);
         if (leadingEdgeDelay < 10000)
         {
             timerAlarmWrite(timer, leadingEdgeDelay, false);
@@ -60,26 +60,26 @@ void IRAM_ATTR isr() {
     }
     else
     {
-        digitalWrite(PIN_PUMP_POWER, HIGH);
+        digitalWrite(PIN_PUMP_AC, HIGH);
     }
 
 	if (heatingCyclesSet > heatingCyclesIs) 
 	{
 		heatingCyclesIs++;
-		digitalWrite(PIN_HEATING_POWER, HIGH);
+		digitalWrite(PIN_HEATING_AC, HIGH);
 	}
 	else
 	{
-		digitalWrite(PIN_HEATING_POWER, LOW);
+		digitalWrite(PIN_HEATING_AC, LOW);
 	}
 }
 
 void powerBegin(uint8_t timerId) {
-	pinMode(PIN_ZEROCROSS, INPUT_PULLDOWN);
-	attachInterrupt(PIN_ZEROCROSS, isr, RISING);
+	pinMode(PIN_AC_ZEROCROSS, INPUT_PULLDOWN);
+	attachInterrupt(PIN_AC_ZEROCROSS, isr, RISING);
 
-	pinMode(PIN_PUMP_POWER, OUTPUT);
-  	pinMode(PIN_HEATING_POWER, OUTPUT);
+	pinMode(PIN_PUMP_AC, OUTPUT);
+  	pinMode(PIN_HEATING_AC, OUTPUT);
 
 	timer = timerBegin(timerId, 80, true);
 	timerAttachInterrupt(timer, &ignite, true);

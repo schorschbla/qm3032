@@ -6,7 +6,6 @@
 #include <FS.h>
 #include <SPIFFS.h>
 #include <PID_v1.h>
-#include <pidautotuner.h>
 #include <driver/pcnt.h>
 
 #include "BluetoothSerial.h"
@@ -72,7 +71,7 @@ static float temperatureHeatWeights[] = { 5.0f, 85.0f, 10.0f, 2.0f, 3.0f };
 
 int ReadXdb401PressureValue(int *result);
 
-Display display;
+Display display(GC9A01_SPI_WRITE_FREQUENCY, PIN_GC9A01_SCLK, PIN_GC9A01_MOSI, PIN_GC9A01_DC, PIN_GC9A01_CS, PIN_GC9A01_RST);
 
 SPIClass hspi(HSPI);
 Adafruit_MAX31865 thermo(PIN_MAX31865_SELECT, &hspi);
@@ -81,15 +80,7 @@ DataTomeMvAvg<float, double> temperateAvg(20), pressureAvg(25), flowAvg(10), pid
 
 double temperatureSet, temperatureIs, pidOut;
 
-#ifdef PID_TEMPERATURE_AUTOTUNE
-PIDAutotuner tuner = PIDAutotuner();
-#endif
-
 PID temperaturePid(&temperatureIs, &pidOut, &temperatureSet, PID_P, 0, 0, DIRECT);
-
-PIDAutotuner steamTuner = PIDAutotuner();
-
-PIDAutotuner infusionTuner = PIDAutotuner();
 
 Gradient tempGradient(heatGradient, temperatureHeatWeights, 6);
 Gradient pressureGradient(heatGradient, pressureHeatWeights, 6);
@@ -484,14 +475,7 @@ void setup()
   thermo.autoConvert(true);
   thermo.enableBias(true);
 
-  pinMode(PIN_VALVE_POWER, OUTPUT);
-
-#ifdef PID_TEMPERATURE_AUTOTUNE
-  tuner.setTargetInputValue(temperatureSet);
-  tuner.setLoopInterval(HEAT_CYCLE_LENGTH * 1000);
-  tuner.setOutputRange(0, 100);
-  tuner.setZNMode(PIDAutotuner::ZNModeLessOvershoot);
-#endif
+  pinMode(PIN_VALVE_AC, OUTPUT);
 
   initStandbyUi();
   initInfuseUi();
@@ -501,10 +485,6 @@ void setup()
 
   SPIFFS.begin();
   getSplashImages();
-
-#ifdef PID_TEMPERATURE_AUTOTUNE
-  tuner.startTuningLoop(micros());
-#endif
 
   if (!readConfig(config))
   {
@@ -824,15 +804,7 @@ void loop()
     infusing = !infusing;
     if (infusing)
     {
-
-#ifdef PID_TEMPERATURE_AUTOTUNE
-      infusionTuner.setTargetInputValue(96);
-      infusionTuner.setLoopInterval(HEAT_CYCLE_LENGTH * 1000);
-      infusionTuner.setOutputRange(0, 100);
-      infusionTuner.setZNMode(PIDAutotuner::ZNModeBasicPID);
-      infusionTuner.startTuningLoop(micros());
-#endif
-      digitalWrite(PIN_VALVE_POWER, HIGH);
+      digitalWrite(PIN_VALVE_AC, HIGH);
       valveDeadline = 0;
       infuseStart = windowStart;
       flowCounterInfusionStart = flowCounter;
@@ -860,18 +832,9 @@ void loop()
     steam = !steam;
     if (steam)
     {
-#ifdef PID_TEMPERATURE_AUTOTUNE
-      steamTuner.setTargetInputValue(STEAM_TEMPERATURE);
-      steamTuner.setTuningCycles(3);
-      steamTuner.setLoopInterval(HEAT_CYCLE_LENGTH * 1000);
-      steamTuner.setOutputRange(0, 100);
-      steamTuner.setZNMode(PIDAutotuner::ZNModeBasicPID);
-      steamTuner.startTuningLoop(micros());
-#endif
-
       setTemperature(config.steamTemperature);
       setPidTunings(PID_P_STEAM, PID_I_STEAM, PID_D_STEAM);
-      digitalWrite(PIN_VALVE_POWER, HIGH);
+      digitalWrite(PIN_VALVE_AC, HIGH);
       valveDeadline = 0;
     }
     else
@@ -880,7 +843,7 @@ void loop()
       pumpSetLevel(0);
       setPidTunings(PID_P, 0, 0);
       temperatureArrival = false;
-      digitalWrite(PIN_VALVE_POWER, LOW);
+      digitalWrite(PIN_VALVE_AC, LOW);
     }
   }
 
@@ -929,7 +892,7 @@ void loop()
 
   if (valveDeadline != 0 && windowStart > valveDeadline) 
   {
-    digitalWrite(PIN_VALVE_POWER, LOW);
+    digitalWrite(PIN_VALVE_AC, LOW);
   }
 
   if (cycle % MAX31856_READ_INTERVAL_CYCLES == 0)
@@ -964,22 +927,8 @@ void loop()
     }
     else
     {
-#ifdef PID_TEMPERATURE_AUTOTUNE
-      if (infusing)
-      {
-        pidOut = infusionTuner.tunePID(temperatureIs, micros());
-      }
-      else if (steam)
-      {
-        pidOut = steamTuner.tunePID(temperatureIs, micros());
-      }
-      else
-      {
-        pidOut = tuner.tunePID(temperatureIs, micros());
-      }
-#else
       temperaturePid.Compute();
-#endif
+
       if (steam)
       {
         if (temperatureIs < config.steamTemperature - 5.0)
@@ -1045,13 +994,6 @@ void loop()
   {
     delay(CYCLE_LENGTH - elapsed);
   }
-
-#ifdef PID_TEMPERATURE_AUTOTUNE
-  if (tuner.isFinished())
-  {
-    Serial.printf("PID autotune result: Kp = %f; Ki = %f; Kd = %f\n", tuner.getKp(), tuner.getKi(), tuner.getKd());
-  }
-#endif
 
   cycle++;
 }

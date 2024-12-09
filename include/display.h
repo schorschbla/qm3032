@@ -5,7 +5,7 @@
 class Display : public lgfx::LGFX_Device
 {
 public:
-  Display(uint32_t freqWrite = 30000000, int16_t pinSclk = 26, int16_t pinMosi = 14, int16_t pinDc = 27, int16_t pinCs = 12, int16_t pinRst = 13);
+  Display(uint32_t freqWrite, int16_t pinSclk, int16_t pinMosi, int16_t pinDc, int16_t pinCs, int16_t pinRst);
 
   lv_disp_drv_t &lvglDriver();
 
