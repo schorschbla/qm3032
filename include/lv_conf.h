@@ -1,0 +1,16 @@
+#ifndef LV_CONF_H
+#define LV_CONF_H
+
+#define LV_TICK_CUSTOM  1
+#define LV_TICK_CUSTOM_INCLUDE "Arduino.h"
+#define LV_TICK_CUSTOM_SYS_TIME_EXPR (millis())
+
+#define LV_SPRINTF_USE_FLOAT 1
+
+#define LV_THEME_DEFAULT_DARK 1
+
+#define LV_FONT_MONTSERRAT_48 1
+#define LV_FONT_MONTSERRAT_36 1
+#define LV_FONT_MONTSERRAT_20 1
+
+#endif
