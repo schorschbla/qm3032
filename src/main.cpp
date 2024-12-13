@@ -66,7 +66,7 @@
 #define HEATING_OUTPUT_WATTS  1000
 
 unsigned int const heatGradient[] = { 0x7f7f7f, 0x0000ff, 0x00a591, 0x00ff00, 0xffff00, 0xff0000 };
-static float pressureHeatWeights[] = { 1.0f, 7.0f, 4.0f, 2.0f, 1.0f };
+static float pressureHeatWeights[] = { 1.0f, 4.0f, 2.0f, 2.0f, 1.0f };
 static float temperatureHeatWeights[] = { 5.0f, 85.0f, 10.0f, 2.0f, 3.0f };
 
 int ReadXdb401PressureValue(int *result);
@@ -109,8 +109,6 @@ void setTemperature(float t)
   temperatureSet = t;
   temperatureHeatWeights[1] = temperatureSet - 15;
 }
-
-extern void ReadRegs();
 
 unsigned int flowCounter = 0;
 
@@ -585,13 +583,13 @@ void updateUi()
     lv_arc_set_angles(standbyTemperatureArc, 0, temperatureAvgDegree / TEMPERATURE_SAFETY_GUARD * 250);
 
     int temperatureAvgDegreeInt = (int) temperatureAvgDegree;
-    if (temperatureAvgDegreeInt < 100)
+    if (temperatureAvgDegreeInt >= 100)
     {
-      lv_label_set_text_fmt(standbyTemperatureLabel, "%.1f°", temperatureAvgDegree);
+      lv_label_set_text_fmt(standbyTemperatureLabel, "%d°", temperatureAvgDegreeInt);
     }
     else
     {
-      lv_label_set_text_fmt(standbyTemperatureLabel, "%d°", temperatureAvgDegreeInt);
+      lv_label_set_text_fmt(standbyTemperatureLabel, "%.1f°", temperatureAvgDegree);
     }
 
     lv_arc_set_angles(standbyTemperatureArc, 0, temperatureAvgDegree / TEMPERATURE_SAFETY_GUARD * 250);
