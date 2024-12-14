@@ -65,8 +65,10 @@
 #define HEATING_ENERGY_PER_ML_AND_KELVIN_WATTSECONDS   5.76
 #define HEATING_OUTPUT_WATTS  1000
 
+#define PREINFUSION_LAG_ML  0.4
+
 unsigned int const heatGradient[] = { 0x7f7f7f, 0x0000ff, 0x00a591, 0x00ff00, 0xffff00, 0xff0000 };
-static float pressureHeatWeights[] = { 1.0f, 4.0f, 2.0f, 2.0f, 1.0f };
+static float pressureHeatWeights[] = { 1.0f, 5.0f, 2.0f, 2.0f, 1.0f };
 static float temperatureHeatWeights[] = { 5.0f, 85.0f, 10.0f, 2.0f, 3.0f };
 
 int ReadXdb401PressureValue(int *result);
@@ -852,10 +854,10 @@ void loop()
       if (infusionTime < config.preinfusionDuration)
       {
         pumpValue = PUMP_MIN_POWER;
-        if (config.preinfusionVolume > 0)
+        if (config.preinfusionVolume > PREINFUSION_LAG_ML)
         {
           float infusionVolume = (flowCounter - flowCounterInfusionStart) * FLOW_ML_PER_TICK;
-          if (infusionVolume > config.preinfusionVolume)
+          if (infusionVolume > config.preinfusionVolume - PREINFUSION_LAG_ML)
           {
             pumpValue = 0.0;
           }
